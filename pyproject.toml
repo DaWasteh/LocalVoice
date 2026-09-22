@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "localvoice"
-version = "0.1.0"
+version = "0.2.0"
 description = "Private offline desktop dictation with Whisper and Silero VAD"
 readme = "README.md"
 requires-python = ">=3.14"

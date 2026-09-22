@@ -30,7 +30,8 @@ class Settings:
     direct: bool = False
     autostart: bool = False
     close_to_tray: bool = True
-    chunk_seconds: int = 8
+    chunk_seconds: int = 4
+    config_version: int = 2
 
     @classmethod
     def load(cls, root: Path):
@@ -40,11 +41,16 @@ class Settings:
             defaults = asdict(cls())
             values = {k: v for k, v in data.items() if k in defaults and type(v) is type(defaults[k])}
             obj = cls(**values)
+            if values.get('config_version', 1) < 2:
+                # v0.1 had an eight-second default. Preserve non-default custom values.
+                if values.get('chunk_seconds', 8) == 8:
+                    obj.chunk_seconds = 4
+                obj.config_version = 2
             for key, options in {'theme': ('dark', 'light', 'system'), 'mode': ('final', 'preview'),
                                  'hotkey_mode': ('toggle', 'hold')}.items():
                 if getattr(obj, key) not in options:
                     setattr(obj, key, defaults[key])
-            obj.chunk_seconds = max(4, min(20, obj.chunk_seconds))
+            obj.chunk_seconds = max(2, min(20, obj.chunk_seconds))
             return obj
         except (OSError, ValueError, TypeError, AttributeError):
             return cls()

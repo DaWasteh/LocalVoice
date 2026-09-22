@@ -113,7 +113,12 @@ def test_recording_drains_all_chunks_before_ready(window, app, monkeypatch, mode
         def stop(self):
             self.on_chunk(np.ones(16000, np.float32))
     monkeypatch.setattr('localvoice.ui.Recorder', FakeRecorder)
-    monkeypatch.setattr(window.engine, 'transcribe', lambda *args: 'Abschnitt.')
+    monkeypatch.setattr(window.engine, 'start', lambda *args: None)
+    processed = []
+    def transcribe(audio, *args, **kwargs):
+        processed.append(len(audio))
+        return ' '.join(['Abschnitt.'] * (len(audio) // 16000))
+    monkeypatch.setattr(window.engine, 'transcribe', transcribe)
     window.settings.mode = mode
     window.toggle_recording()
     assert window.busy and not window.mode.isEnabled()
@@ -123,6 +128,84 @@ def test_recording_drains_all_chunks_before_ready(window, app, monkeypatch, mode
         QTest.qWait(20)
     assert not window.busy and window.mode.isEnabled()
     assert window.editor.toPlainText() == expected
+    assert sum(processed) == (32000 if mode == 'preview' else 16000)
+
+
+def test_preview_context_is_bounded_and_final_mode_has_no_prompt(window, monkeypatch):
+    import numpy as np
+    window.context_text = ''
+    window.session_settings = replace(window.settings, mode='preview')
+    received = []
+    def transcribe(audio, settings, prompt=''):
+        received.append(prompt)
+        return 'x' * 250
+    monkeypatch.setattr(window.engine, 'transcribe', transcribe)
+    preview = replace(window.settings, mode='preview')
+    for _ in range(3):
+        window.transcribe_chunk(np.ones(16000), preview)
+    assert received[0] == '' and len(received[1]) == 251 and len(received[2]) == 400
+    window.transcribe_chunk(np.ones(16000), replace(preview, mode='final'))
+    assert received[-1] == ''
+
+
+def test_preview_backlog_coalesces_without_duplicate_samples(window, monkeypatch):
+    import numpy as np
+    window.context_text = ''
+    preview = replace(window.settings, mode='preview')
+    blocks = [np.full(16000, value, np.float32) for value in (1, 2, 3)]
+    window.queued_audio.extend(blocks)
+    calls = []
+    monkeypatch.setattr(window.engine, 'transcribe', lambda audio, *a, **k: calls.append(audio) or '')
+    for _ in blocks:
+        window.transcribe_pending(preview)
+    assert len(calls) == 1
+    np.testing.assert_array_equal(calls[0], np.concatenate(blocks))
+    assert window.pending == 0 and not window.queued_audio
+
+
+def test_new_recording_never_reuses_previous_session_context(window, monkeypatch):
+    import time
+    import numpy as np
+    from PySide6.QtTest import QTest
+    class FakeRecorder:
+        def __init__(self, settings, on_chunk, *args):
+            self.on_chunk = on_chunk
+        def start(self): pass
+        def stop(self): self.on_chunk(np.ones(16000, np.float32))
+    prompts = []
+    monkeypatch.setattr('localvoice.ui.Recorder', FakeRecorder)
+    monkeypatch.setattr(window.engine, 'start', lambda *args: None)
+    monkeypatch.setattr(window.engine, 'transcribe', lambda audio, settings, prompt='': prompts.append(prompt) or 'Hallo.')
+    window.settings.mode = 'preview'
+    for _ in range(2):
+        window.toggle_recording()
+        assert window.context_text == ''
+        window.stop_recording()
+        deadline = time.monotonic() + 3
+        while window.busy and time.monotonic() < deadline:
+            QTest.qWait(20)
+        assert not window.busy
+    assert prompts == ['', '']
+    assert window.editor.toPlainText() == 'Hallo. Hallo.'
+
+
+def test_warmup_error_stops_recording_and_remains_visible(window, monkeypatch):
+    import time
+    from PySide6.QtTest import QTest
+    class FakeRecorder:
+        def __init__(self, *args): pass
+        def start(self): pass
+        def stop(self): pass
+    def fail(*args):
+        raise RuntimeError('Modellstart fehlgeschlagen')
+    monkeypatch.setattr('localvoice.ui.Recorder', FakeRecorder)
+    monkeypatch.setattr(window.engine, 'start', fail)
+    window.toggle_recording()
+    deadline = time.monotonic() + 3
+    while window.busy and time.monotonic() < deadline:
+        QTest.qWait(20)
+    assert not window.busy and window.recorder is None
+    assert window.status.text() == 'Modellstart fehlgeschlagen'
 
 
 def test_idle_close_hides_to_tray(window, monkeypatch):

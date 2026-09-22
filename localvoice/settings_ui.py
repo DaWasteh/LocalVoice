@@ -2,13 +2,14 @@ from __future__ import annotations
 from dataclasses import replace
 import threading
 from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QComboBox, QCheckBox,
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QCheckBox,
     QLineEdit, QLabel, QPushButton, QHBoxLayout, QProgressBar, QDialogButtonBox,
     QMessageBox, QSpinBox, QTabWidget, QWidget)
 from .audio import microphones
 from .devices import gpu_devices
 from .models import MODELS, VAD_FILE, download, model_path
 from .integration import parse_hotkey
+from .widgets import StableComboBox as QComboBox
 
 
 class DownloadSignals(QObject):
@@ -100,11 +101,11 @@ class SettingsDialog(QDialog):
         self.select(self.language, settings.language)
         af.addRow('Sprache', self.language)
         self.chunk = QSpinBox()
-        self.chunk.setRange(4, 20)
+        self.chunk.setRange(2, 20)
         self.chunk.setSuffix(' Sekunden')
         self.chunk.setValue(settings.chunk_seconds)
-        af.addRow('Vorschau-Abschnitte', self.chunk)
-        hint = QLabel('Silero-VAD ist immer aktiv. Vorschau verarbeitet Abschnitte\nbevorzugt an einer Pause, spätestens 3 s nach dem Ziel.\nLarge v3 braucht mehr Zeit und Speicher als Turbo.')
+        af.addRow('Vorschau-Ziel (4 s empfohlen)', self.chunk)
+        hint = QLabel('Silero-VAD bleibt aktiv. Frühe Ausgabe an Sprechpausen;\nerster Abschnitt spätestens am Ziel, weitere bis zu 2 s später.\nDazu kommt die Rechenzeit. Kurze Abschnitte haben weniger\nSatzkontext; 4–6 s sind ein Kompromiss, 2 s eher experimentell.')
         hint.setObjectName('muted')
         hint.setWordWrap(True)
         af.addRow(hint)

@@ -108,7 +108,7 @@ class Whisper:
             self.stop()
             raise
 
-    def transcribe(self, audio, settings):
+    def transcribe(self, audio, settings, prompt=''):
         if len(audio) < 1600 or not np.isfinite(audio).all():
             return ''
         # Reject digital silence before even loading Whisper; Silero then gates real speech.
@@ -118,7 +118,8 @@ class Whisper:
         response = self.session.post(self.url + '/inference',
             files={'file': ('dictation.wav', wav_bytes(audio), 'audio/wav')},
             data={'language': settings.language, 'response_format': 'json', 'translate': 'false',
-                  'temperature': '0', 'vad': 'true'}, timeout=(5, 600))
+                  'temperature': '0', 'vad': 'true',
+                  'prompt': prompt[-400:] if settings.mode == 'preview' else ''}, timeout=(5, 600))
         response.raise_for_status()
         return clean_text(response.json().get('text', ''))
 

@@ -6,6 +6,7 @@ from PySide6.QtCore import QLockFile, QTimer
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox
 from localvoice.config import root_dir
+from localvoice import __version__
 
 
 def main():
@@ -62,7 +63,7 @@ def main():
             from localvoice.config import Settings
             recorder = Recorder(Settings(), lambda _: None, lambda _: None, lambda _: None)
             recorder.rate = 48000
-            report = {'python': sys.version, 'gpus': gpu_devices(), 'microphones': microphones(), 'root': str(root),
+            report = {'version': __version__, 'python': sys.version, 'gpus': gpu_devices(), 'microphones': microphones(), 'root': str(root),
                       'model_exists': (root / 'models/ggml-large-v3.bin').is_file(),
                       'hotkey_registered': window.hotkey.registered, 'window_size': [window.width(), window.height()],
                       'resample_samples': len(recorder._resample(np.zeros(48000, np.float32)))}

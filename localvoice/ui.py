@@ -1,18 +1,22 @@
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
+from collections import deque
+import numpy as np
 from dataclasses import replace
 import threading
 import time
 from PySide6.QtCore import Qt, Signal, QObject, QTimer, QSize
 from PySide6.QtGui import QIcon, QTextCursor, QAction, QColor, QPalette
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QPlainTextEdit, QCheckBox, QComboBox, QProgressBar, QSystemTrayIcon, QMenu, QMessageBox)
+    QPlainTextEdit, QCheckBox, QProgressBar, QSystemTrayIcon, QMenu, QMessageBox)
+from . import __version__
 from .config import Settings, assets_dir
-from .audio import Recorder
+from .audio import Recorder, warm_resampler
 from .backend import Whisper
 from .models import MODELS
 from .integration import Hotkey, foreground, is_own_window, send_text, set_autostart, modifiers_pressed
 from .settings_ui import SettingsDialog
+from .widgets import StableComboBox as QComboBox
 
 
 class Events(QObject):
@@ -39,7 +43,7 @@ class Window(QWidget):
         self.settings = Settings.load(root)
         if self.settings.model not in MODELS:
             self.settings.model = 'large-v3'
-        self.setWindowTitle('LocalVoice')
+        self.setWindowTitle(f'LocalVoice · v{__version__}')
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.setFixedWidth(490)
         self.icon = QIcon(str(assets_dir() / 'localvoice.ico'))
@@ -52,6 +56,7 @@ class Window(QWidget):
         self.failed = threading.Event()
         self.pending_lock = threading.Lock()
         self.pending = 0
+        self.queued_audio = deque()
         self.destination = self.last_external = None
         self.direct_blocked = False
         self.pending_text = []
@@ -181,7 +186,7 @@ class Window(QWidget):
         device = 'CPU' if self.settings.device == 'cpu' else self.settings.device.replace('vulkan:', 'Vulkan GPU ')
         self.model_label.setText(f'Whisper {self.settings.model}  ·  {device}  ·  Offline')
         behavior = 'halten zum Sprechen' if self.settings.hotkey_mode == 'hold' else 'Start / Stopp'
-        self.footer.setText(f'{self.settings.hotkey.upper()} · {behavior}\nMikrofon und weitere Optionen: Logo links oben.')
+        self.footer.setText(f'{self.settings.hotkey.upper()} · {behavior}\nOptionen: Logo links oben · LocalVoice {__version__}')
 
     def apply_theme(self):
         system_dark = QApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
@@ -281,6 +286,7 @@ class Window(QWidget):
             self.status.setText('Bitte erst Zusatztasten loslassen, damit der vorige Text eingefügt werden kann.')
             return
         self.session_settings = replace(self.settings)
+        self.context_text = ''
         self.failed.clear()
         self.direct_blocked = False
         self.pending_text = []
@@ -299,6 +305,8 @@ class Window(QWidget):
         try:
             self.recorder = Recorder(self.session_settings, self.queue_chunk, self.events.level.emit, self.events.error.emit)
             self.recorder.start()
+            # Loading overlaps microphone capture instead of delaying the first chunk.
+            self.executor.submit(self.prepare_session, self.session_settings)
         except Exception as exc:
             if self.recorder:
                 self.recorder.stop()
@@ -306,31 +314,59 @@ class Window(QWidget):
             self.finished()
             self.show_error(str(exc))
 
+    def prepare_session(self, settings):
+        try:
+            if not self.failed.is_set() and not self.quitting:
+                self.events.status.emit('Aufnahme läuft · Modell wird vorbereitet …')
+                warm_resampler()
+                self.engine.start(settings)
+                if not self.failed.is_set() and not self.quitting:
+                    self.events.status.emit('Ich höre zu · Modell bereit')
+        except Exception as exc:
+            self.failed.set()
+            self.events.error.emit(str(exc))
+
     def queue_chunk(self, audio):
         with self.pending_lock:
-            self.pending += 1
-            overloaded = self.pending > 12
+            overloaded = len(self.queued_audio) >= 12
+            if not overloaded:
+                self.queued_audio.append(audio)
+                self.pending = len(self.queued_audio)
         if overloaded:
-            with self.pending_lock:
-                self.pending -= 1
             self.failed.set()
             self.events.error.emit('Erkennung kommt nicht hinterher. Bitte ein schnelleres Modell wählen oder den Endmodus nutzen.')
             return
-        self.executor.submit(self.transcribe_chunk, audio, self.session_settings)
+        self.executor.submit(self.transcribe_pending, self.session_settings)
+
+    def transcribe_pending(self, settings):
+        with self.pending_lock:
+            if not self.queued_audio:
+                return
+            parts = [self.queued_audio.popleft()]
+            size = len(parts[0])
+            # On slow hardware, process already buffered audio together instead of
+            # paying Whisper's fixed encoder cost for every tiny queued fragment.
+            while settings.mode == 'preview' and self.queued_audio and size + len(self.queued_audio[0]) <= 30 * 16000:
+                part = self.queued_audio.popleft()
+                size += len(part)
+                parts.append(part)
+            self.pending = len(self.queued_audio)
+        audio = parts[0] if len(parts) == 1 else np.concatenate(parts)
+        self.transcribe_chunk(audio, settings)
 
     def transcribe_chunk(self, audio, settings):
         try:
             if not self.failed.is_set() and not self.quitting:
                 self.events.status.emit('Whisper verarbeitet einen Abschnitt …')
-                text = self.engine.transcribe(audio, settings)
+                prompt = self.context_text if settings.mode == 'preview' else ''
+                text = self.engine.transcribe(audio, settings, prompt=prompt)
                 if text:
+                    if settings.mode == 'preview':
+                        self.context_text = (self.context_text + ' ' + text)[-400:]
                     self.events.text.emit(text)
         except Exception as exc:
             self.failed.set()
             self.events.error.emit(str(exc))
-        finally:
-            with self.pending_lock:
-                self.pending -= 1
 
     def stop_recording(self):
         if not self.recorder:

@@ -1,11 +1,15 @@
 from __future__ import annotations
-from collections import deque
 import queue
 import threading
 import numpy as np
 import sounddevice as sd
 
 SAMPLE_RATE = 16000
+
+
+def warm_resampler():
+    from scipy.signal import resample_poly
+    return resample_poly
 
 
 def microphones():
@@ -25,16 +29,29 @@ def resolve_microphone(key):
 
 
 class Chunker:
-    """Non-overlapping chunks; prefer a short pause near the target duration."""
-    def __init__(self, seconds=8, rate=SAMPLE_RATE):
+    """Lossless, non-overlapping preview chunks with an early first result.
+
+    Prefer 350 ms pauses after half the target (minimum 1.5 s) for the first
+    result, after the full target thereafter. Bound first-chunk buffering to
+    the target and later chunks to
+    target + 2 s. RMS only proposes boundaries; Silero still gates inference.
+    """
+    def __init__(self, seconds=4, rate=SAMPLE_RATE):
         self.rate, self.target = rate, seconds
+        self.minimum = max(1.5, seconds / 2)
+        self.first = True
         self.parts, self.length, self.quiet = [], 0, 0
 
     def feed(self, data):
+        if not len(data):
+            return None
         self.parts.append(data)
         self.length += len(data)
         self.quiet = self.quiet + len(data) if np.sqrt(np.mean(data ** 2)) < 0.008 else 0
-        if self.length >= self.rate * self.target and (self.quiet >= self.rate * .35 or self.length >= self.rate * (self.target + 3)):
+        minimum = self.minimum if self.first else self.target
+        pause = self.length >= self.rate * minimum and self.quiet >= self.rate * .35
+        deadline = self.target if self.first else self.target + 2
+        if pause or self.length >= self.rate * deadline:
             return self.flush()
         return None
 
@@ -42,6 +59,8 @@ class Chunker:
         if not self.parts:
             return None
         audio = np.concatenate(self.parts)
+        if np.sqrt(np.mean(audio ** 2)) >= .001:
+            self.first = False
         self.parts, self.length, self.quiet = [], 0, 0
         return audio
 
@@ -103,10 +122,9 @@ class Recorder:
         if self.rate == SAMPLE_RATE:
             return data
         # PortAudio captures at the hardware rate; polyphase filtering prevents aliasing.
-        from scipy.signal import resample_poly
         from math import gcd
         divisor = gcd(self.rate, SAMPLE_RATE)
-        return resample_poly(data, SAMPLE_RATE // divisor, self.rate // divisor).astype(np.float32)
+        return warm_resampler()(data, SAMPLE_RATE // divisor, self.rate // divisor).astype(np.float32)
 
     def stop(self):
         if self.stream:

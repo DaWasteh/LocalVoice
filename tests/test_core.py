@@ -36,7 +36,7 @@ def test_chunker_lossless_and_forced_boundary():
         if result is not None:
             chunks.append(result)
     chunks.append(chunker.flush())
-    assert [len(x) for x in chunks] == [700, 700, 350]
+    assert [len(x) for x in chunks] == [400, 600, 600, 150]
     np.testing.assert_array_equal(np.concatenate(chunks), original)
     assert chunker.flush() is None
 
@@ -46,6 +46,40 @@ def test_chunker_uses_pause():
     assert chunker.feed(np.ones(380)) is None
     chunk = chunker.feed(np.zeros(40))
     assert len(chunk) == 420
+
+
+def test_short_first_chunk_and_early_pause_are_lossless():
+    chunker = Chunker(seconds=4, rate=100)
+    voice, pause = np.ones(200), np.zeros(40)
+    assert chunker.feed(voice) is None
+    chunk = chunker.feed(pause)
+    np.testing.assert_array_equal(chunk, np.concatenate([voice, pause]))
+    assert not chunker.first
+    assert chunker.feed(np.ones(550)) is None
+    assert len(chunker.feed(np.ones(50))) == 600
+
+
+def test_silent_chunks_do_not_consume_quick_first_result():
+    chunker = Chunker(seconds=4, rate=100)
+    assert len(chunker.feed(np.zeros(200))) == 200
+    assert chunker.first
+    assert chunker.feed(np.ones(350)) is None
+    assert len(chunker.feed(np.ones(50))) == 400
+    assert chunker.feed(np.array([])) is None
+
+
+def test_v01_default_migration_preserves_other_preferences(tmp_path):
+    path = tmp_path / 'state/settings.json'
+    path.parent.mkdir()
+    path.write_text(json.dumps({'model': 'large-v3-turbo', 'microphone': 'WASAPI|RODE', 'chunk_seconds': 8}))
+    settings = Settings.load(tmp_path)
+    assert settings.chunk_seconds == 4 and settings.config_version == 2
+    assert settings.model == 'large-v3-turbo' and settings.microphone == 'WASAPI|RODE'
+    settings.chunk_seconds = 8
+    settings.save(tmp_path)
+    assert Settings.load(tmp_path).chunk_seconds == 8  # deliberate v0.2 value
+    path.write_text(json.dumps({'chunk_seconds': 6}))
+    assert Settings.load(tmp_path).chunk_seconds == 6  # custom v0.1 value
 
 
 def test_pcm_wav():
@@ -86,6 +120,26 @@ def test_hotkeys():
     for value in ('x', 'ctrl', 'ctrl+a+b', 'ctrl+F25', 'ctrl+🐢'):
         with pytest.raises(ValueError):
             parse_hotkey(value)
+
+
+def test_backend_only_forwards_bounded_preview_prompt(tmp_path, monkeypatch):
+    engine = Whisper(tmp_path)
+    engine.url = 'http://127.0.0.1/not-used'
+    monkeypatch.setattr(engine, 'start', lambda *_: None)
+    calls = []
+    class Response:
+        def raise_for_status(self): pass
+        def json(self): return {'text': 'Hallo'}
+    def post(*args, **kwargs):
+        calls.append(kwargs['data'])
+        return Response()
+    monkeypatch.setattr(engine.session, 'post', post)
+    audio = np.ones(16000, np.float32)
+    engine.transcribe(audio, Settings(mode='preview'), prompt='x' * 900)
+    engine.transcribe(audio, Settings(mode='final'), prompt='must not be used')
+    assert calls[0]['prompt'] == 'x' * 400 and calls[0]['vad'] == 'true'
+    assert calls[1]['prompt'] == ''
+    engine.close()
 
 
 def test_cleaning_does_not_blacklist_real_words():

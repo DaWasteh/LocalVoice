@@ -26,15 +26,21 @@ Der gesamte Projektordner kann verschoben werden. Es gibt keine Abhängigkeit zu
 ### Bedienung
 
 - **`Ctrl+Alt+Space`** startet/stoppt eine Aufnahme, auch wenn LocalVoice nicht fokussiert ist.
-- **Logo links oben** öffnet die Einstellungen: Mikrofon, Whisper-Variante, Sprache, GPU/CPU, Hotkey, Push-to-talk, Theme und Autostart.
+- **Logo links oben** öffnet die Einstellungen: Mikrofon, Whisper-Variante, Sprache, GPU/CPU, Hotkey, Push-to-talk, Theme und Autostart. Die Dropdowns nutzen ab v0.2 feste Listen statt mitwandernder Menü-Popups. Scrollen über einem geschlossenen Dropdown ändert dessen Auswahl nicht mehr.
 - **Am Ende schreiben:** Erst die gesamte Aufnahme, dann die Erkennung.
-- **Vorschau in Abschnitten:** Fortlaufende Erkennung in standardmäßig 8-sekündigen Abschnitten, bevorzugt an einer Pause, spätestens nach 11 Sekunden. Kein echtes Token-Streaming; Inferenzzeit kommt hinzu. Abschnitte werden genau einmal angehängt, vorhandene Korrekturen bleiben stehen.
+- **Vorschau in Abschnitten:** Ab v0.2 sind **4 Sekunden** das Standard-Ziel. Der erste Abschnitt wird bei einer Sprechpause ab 2 Sekunden freigegeben, ohne Pause spätestens nach 4 Sekunden. Weitere Abschnitte bevorzugen Pausen ab dem Ziel und warten höchstens 2 Sekunden zusätzlich. Das Modell und der Resampler werden schon parallel zur Aufnahme vorbereitet. **Die Rechenzeit kommt weiterhin hinzu** – kein echtes Token-Streaming und keine Garantie für Text nach exakt 4 Sekunden.
+- Für den Satzanschluss erhält Whisper bis zu 400 Zeichen aus den vorherigen Abschnitten **derselben Aufnahme** als Kontext. Es wird kein überlappendes Audio doppelt eingefügt; vorhandene manuelle Korrekturen bleiben stehen. Die Kontextkopie enthält Erkennungstext, nicht nachträgliche Editoränderungen. Auf langsamer Hardware werden bereits wartende Abschnitte bis zu 30 Sekunden zusammengefasst, statt immer mehr kleine Inferenzaufrufe abzuarbeiten.
+- **4–6 Sekunden** sind ein praktischer Kompromiss. 2 Sekunden sind auswählbar, aber experimentell: mehr Rechenaufwand und weniger Satzkontext. Für höchste Satz-/Zeichensetzungsqualität bleibt „Am Ende schreiben“ sinnvoll. Feste Zeitgrenzen können auch bei VAD mitten in ein Wort fallen.
 - Das **Transkript ist editierbar**. „Kopieren“ kopiert den gesamten Inhalt.
 - **„Einfügen in 3 s“:** anklicken und anschließend das gewünschte Textfeld fokussieren.
 - **Haken ganz unten: „Direkt ins aktive Textfeld diktieren“.** Der Editor klappt ein, bleibt aber als Rückfallkopie verfügbar. Das Ziel-Textfeld fokussieren, dann den globalen Hotkey verwenden. Im Vorschau-Modus werden fertige Abschnitte eingefügt; im Endmodus der fertige Text.
 - Bei **Push-to-talk mit Ctrl/Alt/Shift/Win** wartet das direkte Einfügen auf das Loslassen dieser Tasten. Für Einfügen schon während des Haltens eignet sich eine einzelne F-Taste, z. B. `F9`.
 - **X** versteckt die App standardmäßig im Windows-Infobereich rechts unten. „Beenden“ im Tray-Menü beendet auch den eigenen Whisper-Prozess. Ohne verfügbaren Tray wird normal beendet.
 - Maximale Aufnahme: **10 Minuten**. Gerätedefekte, Audioaussetzer und überfüllte Verarbeitungswarteschlangen werden angezeigt, nicht still übergangen.
+
+### Update von v0.1
+
+Ein gespeicherter v0.1-Standard von 8 Sekunden wird beim Laden einmalig auf 4 Sekunden migriert; Modellwahl (auch Turbo), Mikrofon, Theme usw. bleiben erhalten. Abweichende alte Zeitwerte bleiben bestehen. Wer ausdrücklich 8 Sekunden bevorzugt, kann sie in v0.2 erneut einstellen; die Versionsmarkierung verhindert eine erneute Migration. Details: [CHANGELOG.md](CHANGELOG.md).
 
 ## Modelle und Hardware
 
@@ -97,6 +103,9 @@ Native Runtime aus gepinntem Quellcode bauen: [runtime/README.md](runtime/README
 .\LocalVoice.exe --smoke-test
 .\LocalVoice.exe --smoke-test --smoke-audio <Testdatei.wav> --smoke-model tiny
 .venv\Scripts\python.exe scripts/check_portable.py --audio <Testdatei.wav>
+.venv\Scripts\python.exe scripts/check_dropdown.py
+.venv\Scripts\python.exe scripts/check_preview.py --audio <Testdatei.wav> --model large-v3-turbo --device cpu --language de
+.venv\Scripts\python.exe scripts/check_preview_live.py --audio <Testdatei.wav> --device cpu
 ```
 
 Der Windows-Integrationstest öffnet ein eigenes Wegwerf-Textfenster und nimmt etwa 0,3 Sekunden vom Standardmikrofon auf, **ohne die Samples zu speichern**. Nicht in bestehende fremde Fenster tippen lassen. Diagnoseberichte/Screenshots landen lokal in `reports/` bzw. `state/`, nicht in Git.
