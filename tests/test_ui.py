@@ -105,7 +105,7 @@ def test_recording_drains_all_chunks_before_ready(window, app, monkeypatch, mode
     import numpy as np
     from PySide6.QtTest import QTest
     class FakeRecorder:
-        def __init__(self, settings, on_chunk, on_level, on_error):
+        def __init__(self, settings, on_chunk, *callbacks):
             self.on_chunk = on_chunk
         def start(self):
             if mode == 'preview':
@@ -213,3 +213,92 @@ def test_idle_close_hides_to_tray(window, monkeypatch):
     event = QCloseEvent()
     window.closeEvent(event)
     assert not event.isAccepted() and window.isHidden()
+
+
+def wait_idle(window, seconds=3):
+    import time
+    from PySide6.QtTest import QTest
+    deadline = time.monotonic() + seconds
+    while window.busy and time.monotonic() < deadline:
+        QTest.qWait(20)
+
+
+def test_failed_direct_insert_keeps_recording_and_transcribing(window, monkeypatch):
+    import numpy as np
+    from PySide6.QtTest import QTest
+    class FakeRecorder:
+        def __init__(self, settings, on_chunk, *callbacks):
+            self.on_chunk = on_chunk
+        def start(self): pass
+        def stop(self): self.on_chunk(np.ones(16000, np.float32))
+    monkeypatch.setattr('localvoice.ui.Recorder', FakeRecorder)
+    monkeypatch.setattr('localvoice.ui.foreground', lambda: 111)
+    monkeypatch.setattr('localvoice.ui.is_dictation_target', lambda handle: True)
+    monkeypatch.setattr('localvoice.ui.modifiers_pressed', lambda: False)
+    def fail(*args):
+        raise RuntimeError('Zielfenster nicht mehr aktiv')
+    monkeypatch.setattr('localvoice.ui.send_text', fail)
+    monkeypatch.setattr(window.engine, 'start', lambda *args: None)
+    calls = []
+    monkeypatch.setattr(window.engine, 'transcribe', lambda audio, settings, prompt='': calls.append(1) or 'Satz.')
+    window.settings.mode, window.settings.direct = 'preview', True
+    window.toggle_recording()
+    window.queue_chunk(np.ones(16000, np.float32))
+    import time
+    deadline = time.monotonic() + 3
+    while not window.direct_blocked and time.monotonic() < deadline:
+        QTest.qWait(20)
+    assert window.recorder is not None and window.direct_blocked and not window.failed.is_set()
+    window.stop_recording()
+    wait_idle(window)
+    assert len(calls) == 2 and window.editor.toPlainText() == 'Satz. Satz.'
+    assert 'Zielfenster' in window.status.text()
+
+
+def test_duration_limit_stops_and_keeps_text(window, monkeypatch):
+    import numpy as np
+    class FakeRecorder:
+        def __init__(self, settings, on_chunk, on_level, on_error, on_notice, on_limit):
+            self.on_chunk, self.on_limit = on_chunk, on_limit
+        def start(self):
+            self.on_chunk(np.ones(16000, np.float32))
+            self.on_limit()
+        def stop(self): pass
+    monkeypatch.setattr('localvoice.ui.Recorder', FakeRecorder)
+    monkeypatch.setattr(window.engine, 'start', lambda *args: None)
+    monkeypatch.setattr(window.engine, 'transcribe', lambda *args, **kwargs: 'Alles da.')
+    window.settings.mode, window.settings.direct = 'final', False
+    window.toggle_recording()
+    wait_idle(window)
+    assert not window.busy and window.recorder is None
+    assert window.editor.toPlainText() == 'Alles da.'
+    assert 'Transkription abgeschlossen' in window.status.text() and '10 Minuten' in window.status.text()
+
+
+def test_download_error_without_text_is_not_reported_as_success(window, monkeypatch):
+    import time
+    from PySide6.QtTest import QTest
+    def broken(*args):
+        raise StopIteration
+    monkeypatch.setattr('localvoice.settings_ui.download', broken)
+    dialog = SettingsDialog(window.settings, window.root, window)
+    dialog.start_download()
+    deadline = time.monotonic() + 3
+    while dialog.downloading and time.monotonic() < deadline:
+        QTest.qWait(20)
+    assert 'fehlgeschlagen' in dialog.download_label.text()
+    assert 'vollständig' not in dialog.download_label.text()
+    dialog.deleteLater()
+
+
+def test_first_run_uses_preferred_device(app, tmp_path, monkeypatch):
+    monkeypatch.setattr('localvoice.ui.Hotkey.register', lambda *args: None)
+    monkeypatch.setattr('localvoice.ui.preferred_device', lambda: 'cpu')
+    first = Window(tmp_path)
+    assert first.settings.device == 'cpu'
+    first.settings.device = 'vulkan:3'
+    first.settings.save(tmp_path)
+    first.quit()
+    again = Window(tmp_path)
+    assert again.settings.device == 'vulkan:3'  # a saved choice is never replaced
+    again.quit()

@@ -159,7 +159,8 @@ class SettingsDialog(QDialog):
                 for name in (filename, VAD_FILE):
                     download(self.root, name, self.signals.progress.emit, self.cancel)
             except Exception as exc:
-                message = str(exc)
+                # Some exceptions have no text; an empty message would read as success.
+                message = str(exc) or f'Download fehlgeschlagen ({type(exc).__name__})'
             self.signals.finished.emit(message)
         threading.Thread(target=work, daemon=True).start()
 

@@ -17,6 +17,50 @@ from .models import model_path, VAD_FILE
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 
 
+def kill_on_close_job():
+    """Windows job whose children die with LocalVoice, even after a crash or Task Manager kill."""
+    if os.name != 'nt':
+        return None
+    import ctypes as c
+    from ctypes import wintypes as w
+    kernel32 = c.WinDLL('kernel32', use_last_error=True)
+    kernel32.CreateJobObjectW.argtypes = [c.c_void_p, w.LPCWSTR]
+    kernel32.CreateJobObjectW.restype = w.HANDLE
+    kernel32.SetInformationJobObject.argtypes = [w.HANDLE, c.c_int, c.c_void_p, w.DWORD]
+    kernel32.CloseHandle.argtypes = [w.HANDLE]
+    class Basic(c.Structure):
+        _fields_ = [('user_time', c.c_int64), ('job_time', c.c_int64), ('flags', w.DWORD),
+                    ('min_ws', c.c_size_t), ('max_ws', c.c_size_t), ('processes', w.DWORD),
+                    ('affinity', c.c_size_t), ('priority', w.DWORD), ('scheduling', w.DWORD)]
+    class Extended(c.Structure):
+        _fields_ = [('basic', Basic), ('io', c.c_uint64 * 6), ('process_memory', c.c_size_t),
+                    ('job_memory', c.c_size_t), ('peak_process', c.c_size_t), ('peak_job', c.c_size_t)]
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        return None
+    info = Extended()
+    info.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not kernel32.SetInformationJobObject(job, 9, c.byref(info), c.sizeof(info)):  # extended limits
+        kernel32.CloseHandle(job)
+        return None
+    return job
+
+
+def assign_to_job(job, proc):
+    if job is None:
+        return False
+    import ctypes as c
+    from ctypes import wintypes as w
+    kernel32 = c.WinDLL('kernel32', use_last_error=True)
+    kernel32.AssignProcessToJobObject.argtypes = [w.HANDLE, w.HANDLE]
+    return bool(kernel32.AssignProcessToJobObject(job, int(proc._handle)))
+
+
+def cpu_threads():
+    # Roughly the physical cores, capped: more threads than cores slows whisper.cpp down.
+    return str(max(2, min(8, (os.cpu_count() or 4) // 2)))
+
+
 def wav_bytes(audio):
     out = io.BytesIO()
     pcm = (np.clip(audio, -1, 1) * 32767).astype('<i2')
@@ -41,6 +85,7 @@ class Whisper:
         self.lifecycle = threading.Lock()
         self.session = requests.Session()
         self.session.trust_env = False
+        self.job = kill_on_close_job()
 
     def start(self, settings):
         key = (settings.model, settings.device)
@@ -69,7 +114,7 @@ class Whisper:
         for name in ('GGML_VK_VISIBLE_DEVICES', 'WHISPER_DEVICE'):
             env.pop(name, None)
         command = [str(binary), '-m', str(model), '--host', '127.0.0.1', '--port', str(port),
-                   '--request-path', prefix, '--public', str(public), '-t', '8', '-l', 'de',
+                   '--request-path', prefix, '--public', str(public), '-t', cpu_threads(), '-l', 'de',
                    '--vad', '--vad-model', str(vad), '--vad-min-silence-duration-ms', '500',
                    '--vad-speech-pad-ms', '150', '-sns', '-nf', '-bs', '5']
         if settings.device == 'cpu':
@@ -84,6 +129,7 @@ class Whisper:
             self.log = (state / 'backend.log').open('w', encoding='utf-8')
             self.proc = subprocess.Popen(command, cwd=state, env=env, stdout=self.log, stderr=subprocess.STDOUT,
                                          creationflags=NO_WINDOW)
+            assign_to_job(self.job, self.proc)
         try:
             deadline = time.monotonic() + 180
             while time.monotonic() < deadline:

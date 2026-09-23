@@ -7,6 +7,19 @@ import sys
 def gpu_devices():
     if sys.platform == 'darwin':
         return [('auto', 'Apple Metal / Standard-GPU')]
+    return [(f'vulkan:{index}', f'{name} · Vulkan {index}') for index, _, name in vulkan_devices()]
+
+
+def preferred_device():
+    """First-run default: a discrete GPU, else an integrated one, else the CPU."""
+    if sys.platform == 'darwin':
+        return 'auto'
+    devices = sorted(vulkan_devices(), key=lambda row: (row[1] != 2, row[0]))
+    return f'vulkan:{devices[0][0]}' if devices else 'cpu'
+
+
+def vulkan_devices():
+    """(physical index, VkPhysicalDeviceType, name) for integrated (1) and discrete (2) GPUs."""
     library = 'vulkan-1.dll' if sys.platform == 'win32' else ctypes.util.find_library('vulkan')
     if not library:
         return []
@@ -39,7 +52,7 @@ def gpu_devices():
                 device_type = int.from_bytes(data.raw[16:20], 'little')
                 name = data.raw[20:276].split(b'\0')[0].decode('utf-8', 'replace')
                 if device_type in (1, 2):
-                    rows.append((f'vulkan:{index}', f'{name} · Vulkan {index}'))
+                    rows.append((index, device_type, name))
             return rows
         finally:
             vk.vkDestroyInstance(instance, None)

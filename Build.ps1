@@ -13,4 +13,10 @@ Copy-Item build/package/LocalVoice/LocalVoice.exe . -Force
 if (Test-Path '_internal') { Remove-Item '_internal' -Recurse -Force }
 Copy-Item build/package/LocalVoice/_internal . -Recurse -Force
 & $Python -c "import sys,json,pathlib; pathlib.Path('build-info.json').write_text(json.dumps({'python':sys.version,'platform':sys.platform},indent=2),encoding='utf-8')"
-Write-Host 'Ready: LocalVoice.exe. Keep _internal/, runtime/, models/ and licenses/ beside it.'
+if (Test-Path 'runtime/whisper-server.exe') {
+    & $Python scripts/package_release.py
+    if ($LASTEXITCODE -ne 0) { throw 'Release packaging failed.' }
+} else {
+    Write-Warning 'runtime/whisper-server.exe missing: run scripts/build_runtime.py, then scripts/package_release.py.'
+}
+Write-Host 'Ready: LocalVoice.exe (+ release ZIP in dist/). Keep _internal/, runtime/, models/ and licenses/ beside it.'

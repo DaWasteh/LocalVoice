@@ -18,6 +18,8 @@ if IS_WINDOWS:
     user32.IsWindow.argtypes = [w.HWND]
     user32.RegisterHotKey.argtypes = [w.HWND, c.c_int, w.UINT, w.UINT]
     user32.UnregisterHotKey.argtypes = [w.HWND, c.c_int]
+    user32.GetClassNameW.argtypes = [w.HWND, w.LPWSTR, c.c_int]
+    user32.GetClipboardSequenceNumber.restype = w.DWORD
 
 
 def foreground():
@@ -60,6 +62,78 @@ def modifiers_pressed():
     return bool(_held_modifiers)
 
 
+SHELL_CLASSES = {'Shell_TrayWnd', 'Shell_SecondaryTrayWnd', 'NotifyIconOverflowWindow',
+                 'TopLevelWindowForOverflowXamlIsland', 'Progman', 'WorkerW'}
+
+
+def is_shell_window(handle):
+    """Taskbar, tray overflow and desktop are never dictation targets."""
+    if not IS_WINDOWS or not handle:
+        return False
+    buffer = c.create_unicode_buffer(256)
+    user32.GetClassNameW(handle, buffer, 256)
+    return buffer.value in SHELL_CLASSES
+
+
+def is_dictation_target(handle):
+    return bool(handle) and not is_own_window(handle) and not is_shell_window(handle)
+
+
+class ClipboardPaste:
+    """Put text on the clipboard for Ctrl+V, then restore the user's content exactly once.
+
+    Overlapping pastes share one backup, so a second paste never mistakes the first
+    dictated text for the user's clipboard. A newer change by the user always wins.
+    """
+    RESTORE_MS = 2000  # generous: slow targets (remote desktop, busy apps) read the clipboard late
+
+    def __init__(self, clipboard, sequence, delay_ms=RESTORE_MS):
+        self.clipboard, self.sequence = clipboard, sequence
+        self.backup = self.expected = None
+        self.timer = QTimer()
+        self.timer.setSingleShot(True)
+        self.timer.setInterval(delay_ms)
+        self.timer.timeout.connect(self.restore)
+
+    def put(self, text):
+        from PySide6.QtCore import QMimeData
+        if self.backup is None or self.sequence() != self.expected:
+            self.backup = QMimeData()
+            current = self.clipboard.mimeData()
+            if current:
+                for format_name in current.formats():
+                    self.backup.setData(format_name, current.data(format_name))
+        payload = QMimeData()
+        payload.setText(text)
+        for format_name in ('CanIncludeInClipboardHistory', 'CanUploadToCloudClipboard'):
+            payload.setData(f'application/x-qt-windows-mime;value="{format_name}"', b'\0\0\0\0')
+        self.clipboard.setMimeData(payload)
+        self.expected = self.sequence()
+        self.timer.start()
+
+    def restore(self):
+        self.timer.stop()
+        if self.backup is not None and self.sequence() == self.expected:
+            self.clipboard.setMimeData(self.backup)
+        self.backup = None
+
+
+_paster = None
+
+
+def clipboard_paster():
+    global _paster
+    if _paster is None:
+        from PySide6.QtWidgets import QApplication
+        _paster = ClipboardPaste(QApplication.clipboard(), lambda: user32.GetClipboardSequenceNumber())
+    return _paster
+
+
+def restore_clipboard_now():
+    if _paster is not None:
+        _paster.restore()
+
+
 def send_text(text, target):
     """Never steal focus. Fail closed if the destination changed."""
     if not target or foreground() != target or is_own_window(target):
@@ -77,24 +151,7 @@ def send_text(text, target):
         class Input(c.Structure):
             _fields_ = [('type', w.DWORD), ('payload', Payload)]
         # Clipboard paste preserves Unicode (including surrogate pairs) and line breaks.
-        # Restore all prior MIME formats, but never overwrite a newer clipboard change.
-        from PySide6.QtWidgets import QApplication
-        from PySide6.QtCore import QMimeData
-        clipboard = QApplication.clipboard()
-        previous = QMimeData()
-        current = clipboard.mimeData()
-        if current:
-            for format_name in current.formats():
-                previous.setData(format_name, current.data(format_name))
-        payload = QMimeData()
-        payload.setText(text)
-        for format_name in ('CanIncludeInClipboardHistory', 'CanUploadToCloudClipboard'):
-            payload.setData(f'application/x-qt-windows-mime;value="{format_name}"', b'\0\0\0\0')
-        clipboard.setMimeData(payload)
-        sequence = user32.GetClipboardSequenceNumber()
-        def restore():
-            if user32.GetClipboardSequenceNumber() == sequence:
-                clipboard.setMimeData(previous)
+        clipboard_paster().put(text)
         inputs = (Input * 4)()
         for i, (key, flags) in enumerate(((0x11, 0), (0x56, 0), (0x56, 2), (0x11, 2))):
             inputs[i].type = 1
@@ -102,9 +159,8 @@ def send_text(text, target):
         user32.SendInput.argtypes = [w.UINT, c.POINTER(Input), c.c_int]
         user32.SendInput.restype = w.UINT
         if foreground() != target or user32.SendInput(4, inputs, c.sizeof(Input)) != 4:
-            restore()
+            # The pending restore still runs; an immediate restore could race an earlier paste.
             raise RuntimeError('Einfügen blockiert (z. B. Administratorfenster). Text bitte kopieren.')
-        QTimer.singleShot(750, restore)
     else:
         if modifiers_pressed():
             raise RuntimeError('Bitte Zusatztasten loslassen. Text bleibt im Transkript.')
@@ -131,6 +187,9 @@ def parse_hotkey(value):
             raise ValueError('Nur eine Haupttaste im Hotkey erlaubt')
     if key is None or (not mods and key < 0x70):
         raise ValueError('Bitte Zusatztaste oder F-Taste wählen')
+    if mods == 4 and key < 0x70:
+        # Shift+letter/space would swallow ordinary typing (e.g. every capital "A").
+        raise ValueError('Shift allein reicht nicht: bitte Ctrl, Alt oder Win ergänzen oder eine F-Taste wählen')
     return mods, key
 
 

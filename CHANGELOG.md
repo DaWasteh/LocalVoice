@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.3.0 — 2026-09-23
+
+Erste öffentliche Version. Schwerpunkt: Kein diktierter Text und kein aufgenommenes Audio geht mehr still verloren.
+
+### Fehlerbehebungen
+- **10-Minuten-Limit:** Die Aufnahme stoppt jetzt automatisch und wird transkribiert. Bisher wurde im Modus „Am Ende schreiben“ die gesamte Aufnahme verworfen.
+- **Audio-Aussetzer:** Ein einzelner Puffer-Überlauf bricht die Aufnahme nicht mehr ab und verwirft nichts mehr. Es erscheint nur ein Hinweis, die Stelle zu prüfen.
+- **Direktes Diktieren:** Scheitert das Einfügen (z. B. weil das Fenster gewechselt wurde), läuft Aufnahme und Erkennung weiter. Der Text landet vollständig im Transkript. Bisher endete die Aufnahme und das restliche Audio ging verloren.
+- **Zwischenablage:** Zwei Einfügungen kurz hintereinander überschreiben die ursprüngliche Zwischenablage nicht mehr mit dem ersten Diktatabschnitt. Die Wiederherstellung wartet 2 statt 0,75 Sekunden, damit langsame Zielprogramme (z. B. Remote Desktop) nicht den alten Inhalt einfügen.
+- **Whisper-Prozess:** Stürzt LocalVoice ab oder wird es im Task-Manager beendet, endet `whisper-server.exe` jetzt mit (Windows-Job-Objekt) und belegt keinen RAM/VRAM mehr.
+- **Modell-Download:** Ein Fehler ohne Meldungstext (z. B. Datei nicht mehr auf Hugging Face) wurde als „Download vollständig“ angezeigt.
+- Fehler in der Audioverarbeitung werden gemeldet, statt die Aufnahme stumm hängen zu lassen.
+
+### Verbesserungen
+- Erster Start wählt automatisch eine dedizierte GPU, sonst eine integrierte, sonst die CPU (bisher fest „Vulkan 0“).
+- CPU-Threads richten sich nach dem Prozessor (2–8) statt fest 8.
+- Hotkeys aus Shift + Buchstabe/Leertaste werden abgelehnt, weil sie normales Tippen blockieren würden.
+- Taskleiste und Desktop werden nie als Diktierziel gemerkt.
+- Autostart-Eintrag wird nach einem Umzug des Ordners beim nächsten Start automatisch aktualisiert.
+- Einstellungsdialoge werden nach dem Schließen freigegeben.
+
+### Release
+- `Build.ps1` erzeugt zusätzlich `dist/LocalVoice-v<version>-windows-x64.zip` mit SHA-256-Datei. Die Visual-C++-Laufzeit für `whisper-server.exe` liegt bei, eine separate VC++-Installation ist nicht mehr nötig.
+- `scripts/check_portable.py --package` prüft das fertige ZIP in einem frischen Ordner mit echter Erkennung.
+- README, Tests und Drittanbieter-Hinweise für die Veröffentlichung überarbeitet.
+
 ## v0.2.0 — 2026-09-22
 
 ### Bedienung
@@ -19,10 +45,8 @@
 ### Prüfungen
 - Zusätzliche Regressionstests für Maus-Hitboxen, Popup-Position, Tastatur/Mausrad, Einstellungs-Migration, Audioerhaltung, Kontextbegrenzung und Zusammenfassung wartender Abschnitte.
 - Native Dropdown-Prüfung bei normaler und 150%-Skalierung.
-- Turbo-Vergleich mit lokalen englischen/deutschen Sprachfixtures sowie eine zeitgetreu eingespeiste deutsche Aufnahme durch GUI → Recorder → Whisper → Editor. Details und Grenzen in `TESTING.md`.
+- Turbo-Vergleich mit englischen/deutschen Sprachproben sowie eine zeitgetreu eingespeiste deutsche Aufnahme durch GUI → Recorder → Whisper → Editor. Details und Grenzen in `TESTING.md`.
 
 ## v0.1.0 — 2026-09-22
 
-Erste Windows-Version auf Python 3.14: Whisper/Silero, Aufnahme, globaler Hotkey/PTT, finales und segmentiertes Diktat, editierbares Transkript, direktes Einfügen, Tray/Autostart, Themes, Modell-/CPU-/GPU-/Mikrofonauswahl, geprüftes Herunterladen, Logo, eigenständiges Git-Repository und portable EXE.
-
-Der Ausgangsstand bleibt über den lokalen annotierten Tag **`v0.1`** erreichbar. Keine Veröffentlichung/kein Push durch die Versionsmarkierungen.
+Erste Windows-Version auf Python 3.14: Whisper/Silero, Aufnahme, globaler Hotkey/PTT, finales und segmentiertes Diktat, editierbares Transkript, direktes Einfügen, Tray/Autostart, Themes, Modell-/CPU-/GPU-/Mikrofonauswahl, geprüftes Herunterladen, Logo und portable EXE.

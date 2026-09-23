@@ -14,7 +14,9 @@ from .config import Settings, assets_dir
 from .audio import Recorder, warm_resampler
 from .backend import Whisper
 from .models import MODELS
-from .integration import Hotkey, foreground, is_own_window, send_text, set_autostart, modifiers_pressed
+from .devices import preferred_device
+from .integration import (Hotkey, foreground, is_dictation_target, send_text, set_autostart,
+                          modifiers_pressed, restore_clipboard_now)
 from .settings_ui import SettingsDialog
 from .widgets import StableComboBox as QComboBox
 
@@ -25,6 +27,8 @@ class Events(QObject):
     level = Signal(float)
     done = Signal()
     status = Signal(str)
+    notice = Signal(str)
+    limit = Signal()
     pressed = Signal()
     released = Signal()
 
@@ -40,9 +44,12 @@ class Window(QWidget):
     def __init__(self, root, start_tray=False):
         super().__init__()
         self.root = root
+        first_run = not (root / 'state/settings.json').is_file()
         self.settings = Settings.load(root)
         if self.settings.model not in MODELS:
             self.settings.model = 'large-v3'
+        if first_run:
+            self.settings.device = preferred_device()
         self.setWindowTitle(f'LocalVoice · v{__version__}')
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.setFixedWidth(490)
@@ -60,6 +67,7 @@ class Window(QWidget):
         self.destination = self.last_external = None
         self.direct_blocked = False
         self.pending_text = []
+        self.notice = ''
         self.started = 0
         self.build_ui()
         self.events.text.connect(self.receive_text)
@@ -67,6 +75,8 @@ class Window(QWidget):
         self.events.level.connect(lambda value: self.level.setValue(min(100, int(value * 450))))
         self.events.done.connect(self.finished)
         self.events.status.connect(self.status.setText)
+        self.events.notice.connect(self.show_notice)
+        self.events.limit.connect(self.recording_limit)
         self.events.pressed.connect(self.hotkey_pressed)
         self.events.released.connect(self.hotkey_released)
         self.hotkey = Hotkey(QApplication.instance(), self.events.pressed.emit, self.events.released.emit)
@@ -81,6 +91,12 @@ class Window(QWidget):
             self.hotkey.register(self.settings.hotkey)
         except Exception as exc:
             self.status.setText(str(exc))
+        if self.settings.autostart:
+            try:
+                # Keep the login entry pointing at this copy after the folder was moved.
+                set_autostart(True, root)
+            except Exception:
+                pass
         if not start_tray or not QSystemTrayIcon.isSystemTrayAvailable():
             self.show()
 
@@ -290,8 +306,9 @@ class Window(QWidget):
         self.failed.clear()
         self.direct_blocked = False
         self.pending_text = []
+        self.notice = ''
         active = foreground()
-        self.destination = self.last_external if is_own_window(active) else active
+        self.destination = active if is_dictation_target(active) else self.last_external
         if self.settings.direct and not self.destination:
             self.show_error('Bitte zuerst ein Textfeld fokussieren und den globalen Hotkey verwenden.')
             return
@@ -303,7 +320,8 @@ class Window(QWidget):
         self.record.setText('■  Aufnahme stoppen')
         self.status.setText('Ich höre zu …')
         try:
-            self.recorder = Recorder(self.session_settings, self.queue_chunk, self.events.level.emit, self.events.error.emit)
+            self.recorder = Recorder(self.session_settings, self.queue_chunk, self.events.level.emit, self.events.error.emit,
+                                     self.events.notice.emit, self.events.limit.emit)
             self.recorder.start()
             # Loading overlaps microphone capture instead of delaying the first chunk.
             self.executor.submit(self.prepare_session, self.session_settings)
@@ -399,10 +417,12 @@ class Window(QWidget):
         try:
             send_text(text, self.destination)
         except Exception as exc:
+            # Not fatal: recognition continues into the editor, so no later speech is lost.
             self.direct_blocked = True
             self.editor_panel.show()
+            self.reveal.setText('Transkript einklappen')
             self.adjustSize()
-            self.show_error(str(exc))
+            self.show_notice(str(exc))
 
     def finished(self):
         self.busy = False
@@ -412,19 +432,30 @@ class Window(QWidget):
         self.direct.setEnabled(True)
         self.menu_button.setEnabled(True)
         self.level.setValue(0)
-        if not self.failed.is_set() and not self.direct_blocked:
-            self.status.setText('Bereit · Transkription abgeschlossen' if self.editor.toPlainText() else 'Keine Sprache erkannt · bereit')
+        if not self.failed.is_set():
+            # A blocked direct insertion is kept in self.notice, so it stays visible here.
+            result = 'Bereit · Transkription abgeschlossen' if self.editor.toPlainText() else 'Keine Sprache erkannt · bereit'
+            self.status.setText(f'{result}\n{self.notice}' if self.notice else result)
 
     def show_error(self, message):
         self.failed.set()
         self.pending_text.clear()
-        self.status.setText(message)
         if self.recorder:
-            self.failed.set()
             self.stop_recording()
-            self.status.setText(message)
+        self.show_notice(message)
+
+    def show_notice(self, message):
+        """Visible, but unlike show_error it does not end the recording or discard audio."""
+        if not self.failed.is_set():
+            self.notice = message  # repeated below the final status when recognition completes
+        self.status.setText(message)
         if not self.isVisible():
             self.tray.showMessage('LocalVoice', message, QSystemTrayIcon.MessageIcon.Warning, 6000)
+
+    def recording_limit(self):
+        if self.recorder:
+            self.stop_recording()
+        self.show_notice('Maximale Aufnahmedauer von 10 Minuten erreicht · Aufnahme wurde automatisch beendet.')
 
     def tick(self):
         self.flush_direct()
@@ -432,7 +463,7 @@ class Window(QWidget):
         from .integration import IS_WINDOWS
         if IS_WINDOWS:
             handle = foreground()
-            if handle and not is_own_window(handle):
+            if is_dictation_target(handle):
                 self.last_external = handle
         if self.recorder:
             seconds = int(time.monotonic() - self.started)
@@ -455,7 +486,7 @@ class Window(QWidget):
                 send_text(text, foreground())
                 self.status.setText('Text eingefügt')
             except Exception as exc:
-                self.show_error(str(exc))
+                self.show_notice(str(exc))
             finally:
                 self.paste_button.setEnabled(True)
         QTimer.singleShot(3000, paste)
@@ -466,9 +497,11 @@ class Window(QWidget):
             return
         self.show_window()
         dialog = SettingsDialog(self.settings, self.root, self)
-        if dialog.exec() and dialog.result_settings:
+        accepted = dialog.exec() and dialog.result_settings
+        new = dialog.result_settings
+        dialog.deleteLater()
+        if accepted:
             previous = self.settings
-            new = dialog.result_settings
             try:
                 self.hotkey.register(new.hotkey)
                 if new.autostart != previous.autostart:
@@ -519,6 +552,7 @@ class Window(QWidget):
             self.recorder.stop()
             self.recorder = None
         self.engine.close()
+        restore_clipboard_now()
         self.executor.shutdown(wait=False, cancel_futures=True)
         self.tray.hide()
         QApplication.instance().quit()

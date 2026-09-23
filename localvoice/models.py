@@ -40,7 +40,9 @@ def download(root: Path, filename: str, progress, cancel: threading.Event):
         r = session.get(f'https://huggingface.co/api/models/{repo}/revision/main', params={'blobs': 'true'}, timeout=30)
         r.raise_for_status()
         meta = r.json()
-        entry = next(x for x in meta['siblings'] if x['rfilename'] == filename)
+        entry = next((x for x in meta.get('siblings', []) if x.get('rfilename') == filename), None)
+        if entry is None:
+            raise FileNotFoundError(f'{filename} ist im Repository {repo} nicht (mehr) vorhanden')
         expected = entry.get('lfs', {}).get('sha256')
         size = entry.get('size') or entry.get('lfs', {}).get('size')
         if not expected or not size:

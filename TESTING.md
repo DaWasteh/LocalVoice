@@ -1,44 +1,43 @@
-# Validation status — v0.2.0 — 2026-09-22
+# Validation status — v0.3.0
 
-Development build: Windows 11 x64, CPython **3.14.5**, pip **26.2.1**, PyInstaller **6.22.3**. No Node runtime.
+Reference build: Windows 11 x64, CPython **3.14**, PyInstaller **6.22.3**, whisper.cpp at the revision pinned in `runtime/README.md`.
 
-## Passed locally
+## Automated tests (`pytest`)
 
-- **37 automated LocalVoice tests**: v0.1 coverage plus stable dropdown geometry/hitboxes, mouse/keyboard/wheel behavior, v0.1 settings migration, faster first-chunk timing without lost samples, bounded per-recording prompt context, warmup failures, and lossless backlog coalescing.
-- **30 existing VoiceLab tests** after changing its model references/setup/integrity checker to the migrated files. Two pre-existing FastAPI/Starlette deprecation warnings remain outside LocalVoice.
-- Full SHA-256 checks of the relocated large-v3, Silero and downloaded Tiny files.
-- Real Whisper **large-v3 on CPU**, public JFK speech fixture, digital silence and seeded low-level noise. Both silence/noise produced an empty transcript with VAD.
-- Real Whisper **Tiny on CPU and both AMD Vulkan devices**. Correct speech transcript and no text for the tested silence/noise inputs. Large-v3 on GPU was not retested because other workloads occupied GPU memory.
-- Native Windows global hotkey press/release, 0.3-second default-microphone capture (samples discarded), insertion into an isolated test window including umlauts/emoji, and restoration of the previous clipboard text.
-- Native GUI launch, settings-window inspection, frozen EXE launch and shutdown.
-- Frozen executable: bundled Python 3.14, SciPy resampling, real Tiny inference with Silero and clean backend shutdown.
-- Relocated portable EXE in a separate directory containing spaces, **without a `.venv`**, with copied runtime/Tiny/VAD. Sibling-relative paths, GUI, resampling and inference passed.
+54 tests, run by `Build.ps1` before every build; the GitHub Actions workflow runs them on Windows, Linux and macOS:
 
-Raw evidence is intentionally local/ignored under `reports/`, `state/` and `build-output.log`. These checks do not record or publish private microphone audio.
+- Settings persistence, corruption handling and v0.1 → v0.2 migration.
+- Lossless preview chunking, early first chunk, bounded prompt context, backlog coalescing without duplicate samples.
+- Recording never discards captured audio: the 10-minute limit stops and transcribes; audio glitches only warn; consumer failures are reported.
+- Direct dictation: waits for released modifier keys, never types into a changed window, and a failed insertion keeps recording and transcribing into the editor.
+- Clipboard paste: overlapping pastes restore the user's original content; a newer user copy always wins; the restore delay covers slow targets. The taskbar is never a dictation target.
+- Checksum-verified, revision-pinned downloads; cancelled/corrupt/missing files are never installed or reported as success.
+- Whisper server lifecycle: warm-up errors surface, and on Windows the server process dies with LocalVoice even after a hard kill (job object).
+- Dropdown popup geometry/hitboxes, wheel protection, hotkey parsing (e.g. `shift+a` is rejected), autostart command quoting, first-run GPU selection.
 
-## v0.2 preview measurements
+## Manual / hardware checks (Windows 11)
 
-Real local `large-v3-turbo`, same 21.168-second German fixture, VAD enabled. No live microphone audio was collected for these measurements.
+- Real Whisper **large-v3** and **tiny** on CPU; **tiny** and **large-v3-turbo** on AMD Vulkan GPUs. Public JFK speech sample transcribed correctly; digital silence and seeded low-level noise produced no text.
+- Native global hotkey press/release, short default-microphone capture (samples discarded), Unicode insertion (umlauts, emoji) into an isolated test window and clipboard restoration (`scripts/check_windows_integration.py`).
+- Release ZIP extracted to a new folder with spaces, without Python or a venv: GUI start, SciPy resampling and real inference with Silero VAD (`scripts/check_portable.py --package`).
+- Dropdowns at 100 % and 150 % display scaling (`scripts/check_dropdown.py`).
 
-| Check | v0.1 buffering | v0.2 buffering | v0.2 actual first text |
-|---|---:|---:|---:|
-| RX 9070 XT, Vulkan 0 | 8.75 s | 4.00 s | **4.20 s** |
-| CPU | 8.75 s | 4.00 s | **10.715 s** |
+## Preview latency (v0.2 measurement)
 
-The actual values come from real-time pacing of the fixture through GUI → Recorder → Whisper → editor (`scripts/check_preview_live.py`), including model preparation. A separate non-real-time comparison measured ~0.17 s first-chunk GPU inference versus ~6.6 s CPU inference. Thus four-second buffering does **not** imply a four-second CPU result. The v0.1 cold first-result estimate for the same GPU fixture was 10.723 s; it is a model-load/inference scheduling estimate, not a separately paced old-GUI run.
+`large-v3-turbo`, 21.2-second German speech sample paced in real time through GUI → recorder → Whisper → editor (`scripts/check_preview_live.py`), VAD enabled, including model preparation:
 
-Backlog coalescing kept the CPU run to 31.084 s total for 21.168 s audio rather than paying a separate full encoder pass for every small queued tail. The GPU run finished at 21.452 s. These are local smoke measurements, not controlled hardware benchmarks or general latency promises.
+| Device | Buffering before first chunk | First text on screen |
+|---|---:|---:|
+| RX 9070 XT, Vulkan | 4.00 s | **4.20 s** |
+| CPU | 4.00 s | **10.7 s** |
 
-Both English and German comparisons retained speech content in this small sample; short chunks can still change punctuation/case or lose words at forced boundaries. Comparison scripts report differences against full-clip ASR, **not human-labelled word-error rate**. The source fixtures and transcript reports are not committed.
+Four seconds of buffering do not imply a four-second result on CPU. Backlog coalescing kept the CPU run at 31.1 s total for 21.2 s of audio. These are local smoke measurements, not controlled benchmarks. Short chunks can change punctuation/case or lose words at forced boundaries; the comparison scripts report differences against full-clip recognition, not a human-labelled word error rate.
 
-Native dropdown checks passed with both initial selections, up/down pointer movements and normal/150% scale. Explicit viewport-size assertions also cover the padding-related clipping regression found during testing.
+## Not yet covered
 
-## Not yet certified
-
-- Human day-to-day acceptance of dialect, very short utterances, long sessions and chunk-boundary accuracy.
-- Real reboot/login test of Windows autostart (command/registration logic is implemented and unit-tested).
+- Long-term everyday use with dialects, very short utterances and long sessions.
+- A real reboot/login test of autostart (the registry logic is unit-tested).
 - Every third-party text field, elevated applications, remote desktops and accessibility tools.
-- Fresh Windows machine without developer prerequisites; the Vulkan/VC++ runtime requirements must be checked.
-- Native Linux/macOS execution and packaging. GitHub CI is configured but has not run remotely. Wayland global shortcut/input integration is not implemented.
-- Python 3.15/free-threaded Python support. The next-Python CI lane is only an early-warning check.
-- Public-release license compliance review, signing, installers and automatic app updates.
+- A clean Windows 10 installation and NVIDIA/Intel GPUs.
+- Native Linux/macOS runs and packages; Wayland hotkeys/insertion are not implemented.
+- Python 3.15 and free-threaded Python (the CI lane for 3.15 is an early warning only).

@@ -117,7 +117,8 @@ def test_hotkeys():
     assert parse_hotkey('ctrl+alt+space') == (3, 32)
     assert parse_hotkey('F9') == (0, 120)
     assert parse_hotkey('ctrl+shift+d') == (6, 68)
-    for value in ('x', 'ctrl', 'ctrl+a+b', 'ctrl+F25', 'ctrl+🐢'):
+    assert parse_hotkey('shift+F9') == (4, 120)
+    for value in ('x', 'ctrl', 'ctrl+a+b', 'ctrl+F25', 'ctrl+🐢', 'shift+a', 'shift+space'):
         with pytest.raises(ValueError):
             parse_hotkey(value)
 
@@ -168,3 +169,64 @@ def test_changed_target_refuses_injection(monkeypatch):
     monkeypatch.setattr(integration, 'foreground', lambda: 456)
     with pytest.raises(RuntimeError, match='Zielfenster'):
         integration.send_text('do not type', 123)
+
+
+def feed_recorder(settings, blocks, glitch_at=None):
+    chunks, errors, notices, limits = [], [], [], []
+    rec = Recorder(settings, chunks.append, lambda _: None, errors.append, notices.append, lambda: limits.append(True))
+    rec.rate = 16000
+    for index, block in enumerate(blocks):
+        if index == glitch_at:
+            rec._callback(block[:, None], len(block), None, 'input overflow')
+        else:
+            rec.queue.put(block)
+    rec.stop_event.set()
+    rec._consume()
+    return chunks, errors, notices, limits
+
+
+@pytest.mark.parametrize('mode', ['final', 'preview'])
+def test_duration_limit_transcribes_instead_of_discarding(monkeypatch, mode):
+    monkeypatch.setattr('localvoice.audio.MAX_SECONDS', 10)
+    blocks = [np.full(16000 * 4, .1, np.float32)] * 4  # 16 s offered, limit 10 s
+    chunks, errors, _, limits = feed_recorder(Settings(mode=mode), blocks)
+    assert sum(len(c) for c in chunks) == 16000 * 10
+    assert limits == [True] and not errors
+
+
+def test_audio_glitch_warns_but_keeps_recording():
+    blocks = [np.full(16000, .1, np.float32)] * 5
+    chunks, errors, notices, _ = feed_recorder(Settings(mode='final'), blocks, glitch_at=2)
+    assert sum(len(c) for c in chunks) == 16000 * 5
+    assert not errors and len(notices) == 1
+
+
+def test_consumer_failure_is_reported(monkeypatch):
+    errors = []
+    rec = Recorder(Settings(mode='final'), lambda _: None, lambda _: None, errors.append)
+    rec.rate = 48000
+    monkeypatch.setattr(rec, '_resample', lambda _: 1 / 0)
+    rec.queue.put(np.ones(4800, np.float32))
+    rec.stop_event.set()
+    rec._consume()
+    assert errors and 'Audioverarbeitung' in errors[0]
+
+
+def test_cpu_threads_are_bounded(monkeypatch):
+    from localvoice import backend
+    for cores, expected in ((None, '2'), (4, '2'), (12, '6'), (64, '8')):
+        monkeypatch.setattr(backend.os, 'cpu_count', lambda cores=cores: cores)
+        assert backend.cpu_threads() == expected
+
+
+def test_preferred_device_picks_discrete_then_integrated_then_cpu(monkeypatch):
+    import localvoice.devices as devices
+    from types import SimpleNamespace
+    monkeypatch.setattr(devices, 'sys', SimpleNamespace(platform='win32'))
+    monkeypatch.setattr(devices, 'vulkan_devices', lambda: [(0, 1, 'iGPU'), (1, 2, 'dGPU')])
+    assert devices.preferred_device() == 'vulkan:1'
+    assert devices.gpu_devices() == [('vulkan:0', 'iGPU · Vulkan 0'), ('vulkan:1', 'dGPU · Vulkan 1')]
+    monkeypatch.setattr(devices, 'vulkan_devices', lambda: [(0, 1, 'iGPU')])
+    assert devices.preferred_device() == 'vulkan:0'
+    monkeypatch.setattr(devices, 'vulkan_devices', lambda: [])
+    assert devices.preferred_device() == 'cpu'

@@ -53,3 +53,9 @@ def test_cancel_removes_partial(tmp_path, monkeypatch):
     with pytest.raises(InterruptedError):
         download(tmp_path, VAD_FILE, lambda *_: None, cancel)
     assert not list(tmp_path.rglob('*.part'))
+
+
+def test_missing_remote_file_is_a_readable_error(tmp_path, monkeypatch):
+    monkeypatch.setattr('localvoice.models.requests.Session', Session)
+    with pytest.raises(FileNotFoundError, match='ggml-tiny.bin'):
+        download(tmp_path, 'ggml-tiny.bin', lambda *_: None, threading.Event())

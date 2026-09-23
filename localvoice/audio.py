@@ -5,6 +5,7 @@ import numpy as np
 import sounddevice as sd
 
 SAMPLE_RATE = 16000
+MAX_SECONDS = 600
 
 
 def warm_resampler():
@@ -66,13 +67,17 @@ class Chunker:
 
 
 class Recorder:
-    def __init__(self, settings, on_chunk, on_level, on_error):
+    """Captures until stopped. Glitches and the duration limit never discard captured audio."""
+    def __init__(self, settings, on_chunk, on_level, on_error, on_notice=None, on_limit=None):
         self.settings, self.on_chunk, self.on_level, self.on_error = settings, on_chunk, on_level, on_error
+        self.on_notice = on_notice or (lambda _: None)
+        self.on_limit = on_limit or (lambda: None)
         self.queue = queue.Queue(maxsize=600)
         self.stop_event = threading.Event()
         self.stream = None
         self.thread = None
-        self.failed = False
+        self.glitches = 0
+        self.limit_reached = False
 
     def start(self):
         device = resolve_microphone(self.settings.microphone)
@@ -85,38 +90,49 @@ class Recorder:
         self.thread.start()
 
     def _callback(self, data, frames, timing, status):
+        # A single overflow must not throw away minutes of dictation: keep going, warn once.
         if status:
-            self.failed = True
+            self.glitches += 1
         try:
             self.queue.put_nowait(data[:, 0].copy())
         except queue.Full:
-            self.failed = True
+            self.glitches += 1
 
     def _consume(self):
+        try:
+            self._consume_blocks()
+        except Exception as exc:
+            self.on_error(f'Audioverarbeitung fehlgeschlagen: {exc}')
+
+    def _consume_blocks(self):
         chunker = Chunker(self.settings.chunk_seconds, self.rate)
-        parts, length = [], 0
+        parts, length, warned = [], 0, False
+        limit = self.rate * MAX_SECONDS
         while not self.stop_event.is_set() or not self.queue.empty():
             try:
                 data = self.queue.get(timeout=.1)
             except queue.Empty:
                 continue
             self.on_level(float(np.sqrt(np.mean(data ** 2))))
+            if self.glitches and not warned:
+                warned = True
+                self.on_notice('Kurzer Audio-Aussetzer erkannt · Text an dieser Stelle bitte prüfen.')
+            data = data[:limit - length]
             length += len(data)
-            if self.failed:
-                self.on_error('Audio-Aussetzer erkannt. Aufnahme bitte wiederholen.')
-                return
-            if length > self.rate * 600:
-                self.on_error('Maximale Aufnahmedauer von 10 Minuten erreicht. Bitte stoppen.')
-                return
             if self.settings.mode == 'preview':
                 chunk = chunker.feed(data)
                 if chunk is not None:
                     self.on_chunk(self._resample(chunk))
             else:
                 parts.append(data)
+            if length >= limit:
+                self.limit_reached = True
+                break
         tail = chunker.flush() if self.settings.mode == 'preview' else (np.concatenate(parts) if parts else None)
         if tail is not None:
             self.on_chunk(self._resample(tail))
+        if self.limit_reached:
+            self.on_limit()
 
     def _resample(self, data):
         if self.rate == SAMPLE_RATE:
