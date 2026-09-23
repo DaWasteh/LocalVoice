@@ -4,7 +4,7 @@ Reference build: Windows 11 x64, CPython **3.14**, PyInstaller **6.22.3**, whisp
 
 ## Automated tests (`pytest`)
 
-54 tests, run by `Build.ps1` before every build; the GitHub Actions workflow runs them on Windows, Linux and macOS:
+54 tests, run by `Build.ps1` before every build; the GitHub Actions workflow runs them on Windows, Linux and macOS with Python 3.12, 3.13 and 3.14:
 
 - Settings persistence, corruption handling and v0.1 → v0.2 migration.
 - Lossless preview chunking, early first chunk, bounded prompt context, backlog coalescing without duplicate samples.

@@ -11,6 +11,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
+        # 3.14 is the release build; 3.12 is the oldest version numpy/SciPy still support.
+        python: ['3.12', '3.13', '3.14']
+    name: stable (${{ matrix.os }}, ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen
@@ -18,24 +21,25 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.14'
+          python-version: ${{ matrix.python }}
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libportaudio2 libegl1 libopengl0 libxkbcommon0
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pip check
       - run: python -m pytest -q
-      - if: runner.os == 'Windows'
+      - if: runner.os == 'Windows' && matrix.python == '3.14'
         shell: pwsh
         run: |
           python -m PyInstaller --noconfirm --onedir --windowed --name LocalVoice --icon assets/localvoice.ico --add-data 'assets;assets' --collect-data _sounddevice_data main.py
-      - if: runner.os == 'Windows'
+      - if: runner.os == 'Windows' && matrix.python == '3.14'
         uses: actions/upload-artifact@v7
         with:
           name: windows-app-without-models-or-whisper-runtime
           path: dist/LocalVoice/
   next-python:
-    # Early warning only: native wheels may not exist yet for the next CPython.
+    # Early warning only: native wheels may not exist yet for the next CPython
+    # (PySide6 6.11 is capped below 3.15). Switch to '3.16-dev' once 3.15 is supported.
     continue-on-error: true
     runs-on: windows-latest
     env:

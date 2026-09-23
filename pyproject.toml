@@ -7,7 +7,7 @@ name = "localvoice"
 version = "0.3.0"
 description = "Private offline desktop dictation with Whisper and Silero VAD"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 license = "MIT"
 authors = [{name = "LocalVoice contributors"}]
 dependencies = [
