@@ -257,6 +257,7 @@ def test_failed_direct_insert_keeps_recording_and_transcribing(window, monkeypat
 
 def test_duration_limit_stops_and_keeps_text(window, monkeypatch):
     import numpy as np
+    from PySide6.QtTest import QTest
     class FakeRecorder:
         def __init__(self, settings, on_chunk, on_level, on_error, on_notice, on_limit):
             self.on_chunk, self.on_limit = on_chunk, on_limit
@@ -270,6 +271,9 @@ def test_duration_limit_stops_and_keeps_text(window, monkeypatch):
     window.settings.mode, window.settings.direct = 'final', False
     window.toggle_recording()
     wait_idle(window)
+    # Drain worker jobs queued behind "done" (model preparation) and deliver their signals.
+    window.executor.submit(lambda: None).result(timeout=3)
+    QTest.qWait(50)
     assert not window.busy and window.recorder is None
     assert window.editor.toPlainText() == 'Alles da.'
     assert 'Transkription abgeschlossen' in window.status.text() and '10 Minuten' in window.status.text()

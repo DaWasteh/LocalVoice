@@ -74,7 +74,7 @@ class Window(QWidget):
         self.events.error.connect(self.show_error)
         self.events.level.connect(lambda value: self.level.setValue(min(100, int(value * 450))))
         self.events.done.connect(self.finished)
-        self.events.status.connect(self.status.setText)
+        self.events.status.connect(self.session_status)
         self.events.notice.connect(self.show_notice)
         self.events.limit.connect(self.recording_limit)
         self.events.pressed.connect(self.hotkey_pressed)
@@ -436,6 +436,11 @@ class Window(QWidget):
             # A blocked direct insertion is kept in self.notice, so it stays visible here.
             result = 'Bereit · Transkription abgeschlossen' if self.editor.toPlainText() else 'Keine Sprache erkannt · bereit'
             self.status.setText(f'{result}\n{self.notice}' if self.notice else result)
+
+    def session_status(self, message):
+        # Worker progress queued behind done/error must not overwrite the final status.
+        if self.busy and not self.failed.is_set():
+            self.status.setText(message)
 
     def show_error(self, message):
         self.failed.set()
