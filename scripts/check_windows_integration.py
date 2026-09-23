@@ -82,6 +82,10 @@ with tempfile.TemporaryDirectory(prefix='localvoice-test-') as temp:
         QTimer.singleShot(800, app.quit)
         app.exec()
         hotkey.close()
+        deadline = time.monotonic() + 4  # restore happens ClipboardPaste.RESTORE_MS after the paste
+        while app.clipboard().text() != prior_clipboard_text and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(.05)
         report['clipboard_restored'] = app.clipboard().text() == prior_clipboard_text
         report['hotkey_press'] = events.count('press') == 1
         report['hotkey_release'] = events.count('release') == 1
