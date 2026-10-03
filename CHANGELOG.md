@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.3.3 — 2026-10-03
+
+### Fehlerbehebungen
+- **Strg+Alt+Leertaste unter Ubuntu/Wayland:** Globale Tastenkürzel werden jetzt über das native GlobalShortcuts-Portal registriert, statt unter Wayland grundsätzlich abgelehnt. Unterstützt Start/Stopp und Push-to-talk; Gedrückthalten löst nicht mehrfach aus.
+- Einrichtung/Freigabe erfolgt im Hintergrund, ohne die Oberfläche zu blockieren. Abgelehnte oder fehlende Desktop-Unterstützung wird angezeigt; der Aufnahme-Button bleibt nutzbar. Beim Beenden wird die Portal-Sitzung geschlossen.
+- Nur Ereignisse der eigenen Portal-Sitzung und des echten Desktop-Dienstes werden verarbeitet. Späte Ereignisse einer bereits geschlossenen Registrierung werden ignoriert.
+- Linux benötigt zusätzlich `dbus-next` (in den Installationsabhängigkeiten enthalten). Windows bleibt bei nativen APIs, X11/macOS bei `pynput`; dort wird nun auch der Registrierungsstatus gesetzt.
+- Wayland-Texteinfügen bleibt unverändert nicht unterstützt; Transkript kopieren verwenden.
+
+### Prüfungen
+- Automatisierte Portal-Protokolltests für Antworten vor Methodenrückkehr, Ablehnung, leere Bindung, Abbruch, Aufräumen, fremde Ereignisse und Tastaturwiederholung.
+- Nativer Ubuntu/GNOME-50-Wayland-Test: virtuelle Tastatur → Desktop-Portal → GUI, Start/Stopp und Push-to-talk einschließlich Gedrückthalten; ohne Fensteraktivierung. Mikrofon/Whisper waren dabei ersetzt, es wurde kein Audio aufgenommen.
+
 ## v0.3.2 — 2026-10-03
 
 ### Fehlerbehebungen

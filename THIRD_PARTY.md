@@ -12,7 +12,8 @@ LocalVoice's own code and logo are MIT licensed. This does **not** relicense its
 | NumPy / SciPy | BSD-3-Clause, plus bundled notices for their numerical libraries. |
 | sounddevice / PortAudio | MIT. |
 | requests, urllib3, certifi, idna, charset-normalizer | Apache-2.0 / MIT / MPL-2.0 as declared by each package. |
-| pynput | LGPL-3.0; only used for keyboard integration on Linux/macOS. Windows uses native APIs. |
+| pynput | LGPL-3.0; keyboard integration on X11/macOS. Windows uses native APIs. |
+| dbus-next | MIT; Linux-only D-Bus client for the native Wayland GlobalShortcuts portal; https://github.com/altdesktop/python-dbus-next. |
 | Microsoft Visual C++ runtime (`msvcp140.dll`, `vcruntime140*.dll`, `vcomp140.dll` in `runtime/`) | Redistributable files under the Microsoft Visual Studio license terms (app-local deployment). |
 | PyInstaller bootloader | GPL-2.0 with an exception that allows distributing bundled applications under their own license. |
 

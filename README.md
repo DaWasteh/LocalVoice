@@ -68,7 +68,14 @@ Unter **Einstellungen → Allgemein → „Mit Anmeldung starten (im Infobereich
 - **Linux, auch Ubuntu/Wayland:** `$XDG_CONFIG_HOME/autostart/LocalVoice.desktop`, standardmäßig `~/.config/autostart/LocalVoice.desktop`. Benötigt einen Desktop mit XDG-Autostart-Unterstützung, z. B. GNOME oder KDE. Eine virtuelle Python-Umgebung wird direkt verwendet, ohne Shell-Aktivierung.
 - **macOS:** `~/Library/LaunchAgents/com.localvoice.LocalVoice.plist` (bei der nächsten Anmeldung durch launchd gestartet).
 
-Autostart ergänzt keine globalen Wayland-Hotkeys und kein automatisches Einfügen; diese Grenzen bleiben bestehen.
+### Tastenkürzel unter Ubuntu / Wayland
+
+Ab **v0.3.3** nutzt LocalVoice das native **GlobalShortcuts-Portal** des Desktops. `Ctrl+Alt+Space` funktioniert damit auch außerhalb des LocalVoice-Fensters – sowohl Start/Stopp als auch Push-to-talk, ohne Mehrfachauslösung beim Gedrückthalten. Unter Ubuntu/GNOME 50 mit echten Desktop-Tastaturereignissen geprüft.
+
+- Falls der Desktop eine Freigabe oder Auswahl zeigt, das Tastenkürzel dort bestätigen. Die Statuszeile zeigt anschließend das vom Desktop zugewiesene Kürzel; es kann von der gewünschten Kombination abweichen.
+- Bei Quellcode-Installationen nach dem Update die Abhängigkeiten aktualisieren: `.venv/bin/python -m pip install -r requirements.txt`. Unter Linux kommt der kleine D-Bus-Client `dbus-next` hinzu.
+- Benötigt ein Desktop-Portal mit **GlobalShortcuts-Unterstützung**. Ältere GNOME-/Ubuntu-Versionen bieten das eventuell noch nicht; LocalVoice meldet dann den Fehler, der Aufnahme-Button bleibt verfügbar. Keine Root-Rechte, kein Tastatur-Überwachungsdienst und keine Änderung eigener GNOME-Tastenkürzel nötig.
+- **Automatisches Einfügen in fremde Textfelder unter Wayland bleibt nicht unterstützt.** „Direkt ins aktive Textfeld diktieren“ dort ausgeschaltet lassen und das Transkript kopieren.
 
 ## Plattformstatus
 
@@ -76,7 +83,7 @@ Autostart ergänzt keine globalen Wayland-Hotkeys und kein automatisches Einfüg
 |---|---|
 | Windows 10/11 x64 | Unterstützt; getestet unter Windows 11 (CPU und Vulkan). |
 | Linux (X11) | XDG-Autostart implementiert und unter Linux getestet. Diktierintegration vorbereitet (`xdotool`, PortAudio, eigener whisper-server-Build), noch nicht vollständig hardwaregetestet. |
-| Linux (Wayland) | XDG-Autostart verfügbar. Globale Hotkeys und automatisches Einfügen noch nicht unterstützt. |
+| Linux (Wayland) | XDG-Autostart und globale Hotkeys über das GlobalShortcuts-Portal (Start/Stopp und Push-to-talk). Ubuntu/GNOME 50 geprüft; andere Portal-Backends noch nicht praktisch geprüft. Automatisches Einfügen nicht unterstützt. |
 | macOS | LaunchAgent-Autostart implementiert. Code und Metal-Runtime-Build vorbereitet, noch nicht vollständig hardwaregetestet; kein signiertes `.app`. |
 
 ## Entwicklung

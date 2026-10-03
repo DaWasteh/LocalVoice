@@ -1,14 +1,14 @@
-# Validation status — v0.3.2
+# Validation status — v0.3.3
 
 Release toolchain: CPython **3.14**, PyInstaller **6.22.3**, whisper.cpp at the revision pinned in `runtime/README.md` (unchanged from v0.3.1).
 
-Local regression run on Ubuntu/Wayland: **67 passed, 2 Windows-only tests skipped**. Linux autostart entries are validated and actually launched via GLib, including spaces, Unicode, percent signs, quotes, backslashes and control characters. This simulates the desktop launch, not a logout/login cycle.
+Local regression run on Ubuntu/Wayland: **78 passed, 2 Windows-only tests skipped**. Linux autostart entries are validated and actually launched via GLib, including spaces, Unicode, percent signs, quotes, backslashes and control characters. This simulates the desktop launch, not a logout/login cycle.
 
-The release is gated on the nine stable CI combinations below and a Windows ZIP build/start smoke test. Existing hardware measurements below are from the earlier Windows reference build, not new v0.3.2 hardware runs.
+The release is gated on the nine stable CI combinations below and a Windows ZIP build/start smoke test. Existing hardware measurements below are from the earlier Windows reference build, not new v0.3.3 hardware runs.
 
 ## Automated tests (`pytest`)
 
-69 test cases (platform-specific skips), run by `Build.ps1` before every build; the GitHub Actions workflow runs them on Windows, Linux and macOS with Python 3.12, 3.13 and 3.14:
+80 test cases on Linux (platform-specific skips; portal tests require the Linux-only `dbus-next` dependency), run by `Build.ps1` before every build; the GitHub Actions workflow runs them on Windows, Linux and macOS with Python 3.12, 3.13 and 3.14:
 
 - Settings persistence, corruption handling and v0.1 → v0.2 migration.
 - Lossless preview chunking, early first chunk, bounded prompt context, backlog coalescing without duplicate samples.
@@ -20,6 +20,11 @@ The release is gated on the nine stable CI combinations below and a Windows ZIP 
 - Dropdown popup geometry/hitboxes, wheel protection, hotkey parsing (e.g. `shift+a` is rejected), first-run GPU selection.
 - Autostart: unchanged Windows registry command for frozen/source launches; Linux XDG config selection and real desktop execution; macOS plist contents and native `plutil` validation; repeated enable/disable, moved folders, atomic replacement failures and UI rollback.
 - Settings remain saveable with an unchanged, unavailable hotkey (Wayland).
+- Wayland portal: trigger conversion, sender/session/action validation, repeat suppression, response-before-return races, denied/empty bindings, cancellation while awaiting permission, session cleanup, push-to-talk release when the session closes, and ignored late callbacks.
+
+## Native Ubuntu / Wayland hotkey check
+
+`scripts/check_gnome_hotkey.py` passed on **GNOME 50.1 / Wayland**. It uses an explicitly available `/dev/uinput` to send Ctrl+Alt+Space through the real compositor and GlobalShortcuts portal into the GUI. Start/stopp, held-key autorepeat suppression and push-to-talk press/release all pass, with the window hidden throughout. Portal session and worker are closed afterwards. No GNOME custom-keybinding settings are modified. Microphone and inference are stubbed: this proves the hotkey/GUI path, not speech recognition. The script does not grant permissions or run as root; it may require a desktop shortcut consent dialog.
 
 ## Manual / hardware checks (Windows 11)
 
@@ -45,5 +50,5 @@ Four seconds of buffering do not imply a four-second result on CPU. Backlog coal
 - A real reboot/login test of autostart on Windows, Linux or macOS (registration is automated-tested; the Linux desktop command is actually launched).
 - Every third-party text field, elevated applications, remote desktops and accessibility tools.
 - A clean Windows 10 installation and NVIDIA/Intel GPUs.
-- Complete Linux/macOS hardware/inference/package validation; Wayland hotkeys/insertion are not implemented.
+- Complete Linux/macOS hardware/inference/package validation; Wayland automatic text insertion is not implemented. Portal hotkeys on desktops other than the tested GNOME 50.1 session are not hardware-tested.
 - Python 3.15 and free-threaded Python (the CI lane for 3.15 is an early warning only).

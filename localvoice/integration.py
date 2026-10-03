@@ -194,10 +194,12 @@ def parse_hotkey(value):
 
 
 class Hotkey(QAbstractNativeEventFilter):
-    def __init__(self, app, on_press, on_release):
+    def __init__(self, app, on_press, on_release, on_status=lambda message: None):
         super().__init__()
         self.app, self.on_press, self.on_release = app, on_press, on_release
+        self.on_status = on_status
         self.registered, self.held, self.listener = False, False, None
+        self.portal = None
         self.timer = QTimer()
         self.timer.setInterval(25)
         self.timer.timeout.connect(self._release_poll)
@@ -212,11 +214,21 @@ class Hotkey(QAbstractNativeEventFilter):
                 raise RuntimeError('Hotkey bereits belegt. Bitte eine andere Kombination wählen.')
             self.registered = True
             self.timer.start()
+        elif sys.platform.startswith('linux') and os.environ.get('XDG_SESSION_TYPE') == 'wayland':
+            from .portal_hotkey import PortalHotkey
+            portal = self.portal = PortalHotkey(mods, key)
+            portal.pressed.connect(lambda: self.on_press() if self.portal is portal and not portal.closed else None)
+            portal.released.connect(lambda: self.on_release() if self.portal is portal and not portal.closed else None)
+            def status(registered, message):
+                if self.portal is portal and not portal.closed:
+                    self.registered = registered
+                    self.on_status(message)
+            portal.status.connect(status)
+            self.on_status('Wayland: Tastenkürzel wird eingerichtet; ggf. im Desktop-Dialog erlauben.')
+            portal.start()
         else:
-            if os.environ.get('XDG_SESSION_TYPE') == 'wayland':
-                raise RuntimeError('Wayland: globaler Hotkey benötigt Desktop-Integration. Aufnahme-Button verfügbar.')
             from pynput import keyboard
-            keys = value.lower().split('+')
+            keys = value.lower().replace(' ', '').replace('win', 'cmd').split('+')
             normalized = '+'.join(f'<{p}>' if p in ('ctrl', 'alt', 'shift', 'cmd', 'space') or p.startswith('f') and len(p) > 1 else p for p in keys)
             combo = keyboard.HotKey.parse(normalized)
             self.active_keys = set()
@@ -238,6 +250,7 @@ class Hotkey(QAbstractNativeEventFilter):
             listener = keyboard.Listener(on_press=press, on_release=release)
             self.listener = listener
             listener.start()
+            self.registered = True
 
     def nativeEventFilter(self, event_type, message):
         if IS_WINDOWS:
@@ -261,8 +274,11 @@ class Hotkey(QAbstractNativeEventFilter):
     def close(self):
         self.timer.stop()
         _held_modifiers.clear()
-        if self.registered:
+        if self.registered and IS_WINDOWS:
             user32.UnregisterHotKey(None, 0x4C56)
+        if self.portal:
+            self.portal.close()
+            self.portal = None
         if self.listener:
             self.listener.stop()
             self.listener = None

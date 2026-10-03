@@ -4,3 +4,4 @@ scipy==1.18.1
 sounddevice==0.5.6
 requests==2.34.2
 pynput==1.8.2
+dbus-next==0.2.3; sys_platform == 'linux'

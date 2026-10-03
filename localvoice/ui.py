@@ -79,7 +79,8 @@ class Window(QWidget):
         self.events.limit.connect(self.recording_limit)
         self.events.pressed.connect(self.hotkey_pressed)
         self.events.released.connect(self.hotkey_released)
-        self.hotkey = Hotkey(QApplication.instance(), self.events.pressed.emit, self.events.released.emit)
+        self.hotkey = Hotkey(QApplication.instance(), self.events.pressed.emit, self.events.released.emit,
+                             self.events.notice.emit)
         self.setup_tray()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
