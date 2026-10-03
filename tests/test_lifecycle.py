@@ -5,7 +5,8 @@ import pytest
 from localvoice.integration import set_autostart
 
 
-def test_windows_autostart_quotes_paths_and_uses_tray(monkeypatch, tmp_path):
+@pytest.mark.parametrize('frozen', [True, False])
+def test_windows_autostart_quotes_paths_and_uses_tray(monkeypatch, tmp_path, frozen):
     import localvoice.integration as integration
     monkeypatch.setattr(integration, 'IS_WINDOWS', True)
     calls = []
@@ -15,13 +16,19 @@ def test_windows_autostart_quotes_paths_and_uses_tray(monkeypatch, tmp_path):
     fake = SimpleNamespace(HKEY_CURRENT_USER=1, REG_SZ=1, CreateKey=lambda *_: Key(),
         SetValueEx=lambda *args: calls.append(args), DeleteValue=lambda *args: calls.append(args))
     monkeypatch.setitem(sys.modules, 'winreg', fake)
-    monkeypatch.setattr(sys, 'frozen', True, raising=False)
+    monkeypatch.setattr(sys, 'frozen', frozen, raising=False)
     monkeypatch.setattr(sys, 'executable', str(tmp_path / 'With spaces' / 'LocalVoice.exe'))
     set_autostart(True, tmp_path)
     assert calls[0][-1].startswith('"') and calls[0][-1].endswith(' --tray')
     assert calls[0][1] == 'LocalVoice'
+    if not frozen:
+        assert 'pythonw.exe' in calls[0][-1] and str(tmp_path / 'main.py') in calls[0][-1]
     set_autostart(False, tmp_path)
     assert calls[-1][1] == 'LocalVoice'
+    def missing(*args):
+        raise FileNotFoundError
+    fake.DeleteValue = missing
+    set_autostart(False, tmp_path)
 
 
 PARENT = """import subprocess, sys, time

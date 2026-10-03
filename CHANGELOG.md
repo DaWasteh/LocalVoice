@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.2 — 2026-10-03
+
+### Fehlerbehebungen
+- **Autostart auf allen drei Desktop-Plattformen:** Linux nutzt einen XDG-Autostart-Eintrag (X11 und Wayland), macOS einen LaunchAgent. Der bestehende Windows-Registry-Autostart bleibt unverändert.
+- Die Einstellung heißt jetzt **„Mit Anmeldung starten (im Infobereich)“** und ist auch auf Linux/macOS verfügbar. Ohne Infobereich wird das Fenster angezeigt.
+- Unter Wayland verhindert ein nicht verfügbarer globaler Hotkey nicht mehr das Speichern anderer Einstellungen, solange die Tastenkombination unverändert bleibt.
+- Autostart berücksichtigt virtuelle Python-Umgebungen, Leerzeichen/Sonderzeichen und verschobene Programmordner. Einträge werden atomar aktualisiert und beim Ausschalten entfernt.
+
+### Prüfungen und Release
+- Regressionstests für An-/Ausschalten, Pfadwechsel, Schreibfehler und die Windows-Befehlszeile; Linux-Einträge werden zusätzlich mit dem echten Desktop-Parser gestartet, macOS-Plists mit `plutil` geprüft.
+- Manueller Windows-Paket-Workflow mit eigenem PyInstaller-Bootloader, Versionsressource und Starttest des entpackten Release-ZIPs. Die unveränderte Whisper-Runtime aus v0.3.1 wird SHA-256-geprüft übernommen.
+
 ## v0.3.1 — 2026-10-03
 
 Schwerpunkt: weniger Fehlalarme von Virenscannern. Microsoft Defender hatte `LocalVoice.exe` aus v0.3.0 als `Trojan:Win32/Sabsik.EN.A!ml` eingestuft und samt Autostart-Eintrag und Verknüpfung entfernt.

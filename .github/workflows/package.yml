@@ -1,0 +1,54 @@
+name: Windows release package
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Prepare release environment and custom bootloader
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          if ($LASTEXITCODE -ne 0) { throw 'venv failed' }
+          ./Setup.ps1
+      - name: Reuse checksum-verified unchanged whisper runtime
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # ponytail: the pinned whisper revision is unchanged; rebuild it when runtime/README.md changes.
+          gh release download v0.3.1 --pattern LocalVoice-v0.3.1-windows-x64.zip --dir build/previous
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime download failed' }
+          $zip = 'build/previous/LocalVoice-v0.3.1-windows-x64.zip'
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() -ne '92ced28c6b5fc53547bf4836058a7784406e181239e03992bfe485a4a01b7e84') { throw 'Runtime checksum mismatch' }
+          Expand-Archive $zip build/previous/extracted
+          Copy-Item build/previous/extracted/LocalVoice/runtime/*.exe runtime/
+          Copy-Item build/previous/extracted/LocalVoice/runtime/*.dll runtime/
+      - name: Test and build versioned portable package
+        shell: pwsh
+        run: ./Build.ps1
+      - name: Smoke-test packaged EXE in relocated folder
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist/LocalVoice-v*-windows-x64.zip | Select-Object -First 1
+          $folder = Join-Path $env:RUNNER_TEMP 'LocalVoice relocated with spaces'
+          Expand-Archive $zip.FullName $folder
+          $app = Join-Path $folder 'LocalVoice'
+          $env:LOCALVOICE_SMOKE_ROOT = $app
+          .venv/Scripts/python.exe -c "import json, os, pathlib, subprocess; from localvoice import __version__; root = pathlib.Path(os.environ['LOCALVOICE_SMOKE_ROOT']); assert not (root / 'state').exists(); subprocess.run([str(root / 'LocalVoice.exe'), '--tray', '--smoke-test'], cwd=root, check=True, timeout=90); report = json.loads((root / 'state/smoke-report.json').read_text()); assert report['version'] == __version__; assert pathlib.Path(report['root']) == root; assert report['resample_samples'] == 16000; print(report)"
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged EXE smoke test failed' }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-release-package
+          path: |
+            dist/LocalVoice-v*-windows-x64.zip
+            dist/LocalVoice-v*-windows-x64.zip.sha256
+          if-no-files-found: error

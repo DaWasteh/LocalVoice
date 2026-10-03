@@ -48,10 +48,10 @@ class SettingsDialog(QDialog):
         self.hotkey_mode.addItem('Gedrückt halten: Push-to-talk', 'hold')
         self.select(self.hotkey_mode, settings.hotkey_mode)
         form.addRow('Hotkey-Verhalten', self.hotkey_mode)
-        self.autostart = QCheckBox('Mit Windows starten (im Infobereich)')
+        self.autostart = QCheckBox('Mit Anmeldung starten (im Infobereich)')
         self.autostart.setChecked(settings.autostart)
         import sys
-        self.autostart.setEnabled(sys.platform == 'win32')
+        self.autostart.setEnabled(sys.platform in ('win32', 'darwin') or sys.platform.startswith('linux'))
         form.addRow(self.autostart)
         self.tray = QCheckBox('Beim Schließen in den Infobereich minimieren')
         self.tray.setChecked(settings.close_to_tray)

@@ -65,6 +65,8 @@ def test_settings_has_microphone_and_cpu(window, monkeypatch):
     monkeypatch.setattr('localvoice.settings_ui.microphones', lambda: [('WASAPI|RODE', 'RODE', 1), ('WASAPI|BRIO', 'BRIO', 2)])
     monkeypatch.setattr('localvoice.settings_ui.gpu_devices', lambda: [('vulkan:1', 'Test GPU')])
     dialog = SettingsDialog(window.settings, window.root, window)
+    assert dialog.autostart.isEnabled()
+    assert dialog.autostart.text() == 'Mit Anmeldung starten (im Infobereich)'
     assert dialog.mic.count() == 3
     assert dialog.mic.itemData(0) == ''
     dialog.mic.setCurrentIndex(2)
@@ -306,3 +308,30 @@ def test_first_run_uses_preferred_device(app, tmp_path, monkeypatch):
     again = Window(tmp_path)
     assert again.settings.device == 'vulkan:3'  # a saved choice is never replaced
     again.quit()
+
+
+def test_autostart_saves_when_unchanged_hotkey_is_unavailable(window, monkeypatch):
+    """Wayland's unavailable global hotkey must not block unrelated settings."""
+    new = replace(window.settings, autostart=True)
+    monkeypatch.setattr(SettingsDialog, 'exec', lambda dialog: setattr(dialog, 'result_settings', new) or 1)
+    def unavailable(*args):
+        pytest.fail('Unchanged hotkey must not be registered again')
+    monkeypatch.setattr(window.hotkey, 'register', unavailable)
+    calls = []
+    monkeypatch.setattr('localvoice.ui.set_autostart', lambda enabled, root: calls.append(enabled))
+    window.open_settings()
+    assert calls == [True] and Settings.load(window.root).autostart
+
+
+def test_autostart_write_failure_keeps_previous_settings(window, monkeypatch):
+    new = replace(window.settings, autostart=True)
+    monkeypatch.setattr(SettingsDialog, 'exec', lambda dialog: setattr(dialog, 'result_settings', new) or 1)
+    def fail(enabled, root):
+        if enabled:
+            raise PermissionError('Autostart read only')
+    monkeypatch.setattr('localvoice.ui.set_autostart', fail)
+    warnings = []
+    monkeypatch.setattr('localvoice.ui.QMessageBox.warning', lambda *args: warnings.append(args[-1]))
+    window.open_settings()
+    assert warnings == ['Autostart read only']
+    assert not window.settings.autostart and not Settings.load(window.root).autostart

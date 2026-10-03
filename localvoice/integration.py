@@ -284,5 +284,58 @@ def set_autostart(enabled, root: Path):
                     winreg.DeleteValue(key, 'LocalVoice')
                 except FileNotFoundError:
                     pass
-    elif enabled:
-        raise RuntimeError('Autostart ist in dieser Version nur für Windows implementiert.')
+        return
+
+    if sys.platform == 'darwin':
+        entry = Path.home() / 'Library/LaunchAgents/com.localvoice.LocalVoice.plist'
+    elif sys.platform.startswith('linux'):
+        config = Path(os.environ.get('XDG_CONFIG_HOME', ''))
+        if not config.is_absolute():
+            config = Path.home() / '.config'
+        entry = config / 'autostart/LocalVoice.desktop'
+    else:
+        raise RuntimeError('Autostart wird auf Windows, Linux und macOS unterstützt.')
+    if not enabled:
+        entry.unlink(missing_ok=True)
+        return
+
+    root = root.absolute()
+    # Keep the venv interpreter path: resolve() would follow it to the system Python.
+    args = [os.path.abspath(sys.executable)]
+    if not getattr(sys, 'frozen', False):
+        args.append(str(root / 'main.py'))
+    args.append('--tray')
+    if sys.platform == 'darwin':
+        import plistlib
+        # ponytail: launchd reads this at the next login; no live load/restart needed.
+        content = plistlib.dumps({'Label': 'com.localvoice.LocalVoice',
+                                 'ProgramArguments': args, 'WorkingDirectory': str(root),
+                                 'RunAtLoad': True})
+    else:
+        if '=' in args[0]:
+            raise ValueError('Der Autostart-Programmpfad darf unter Linux kein = enthalten.')
+        def escape(value):
+            return value.replace('\\', '\\\\').replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+        # Exec uses desktop-entry quoting, not shell quoting (two escaping layers).
+        command = ' '.join('"' + ''.join('\\' + char if char in '\\"`$' else char
+                                        for char in arg.replace('%', '%%')) + '"' for arg in args)
+        # GLib checks the executable before expanding %%; env avoids rejecting literal % paths.
+        content = ('[Desktop Entry]\nType=Application\nName=LocalVoice\n'
+                   f'Exec=/usr/bin/env -- {escape(command)}\nPath={escape(str(root))}\n'
+                   'Terminal=false\n').encode('utf-8')
+    import tempfile
+    entry.parent.mkdir(parents=True, exist_ok=True)
+    # Replace atomically; an interrupted/failed write must preserve the old entry.
+    with tempfile.NamedTemporaryFile(dir=entry.parent, delete=False) as file:
+        temp = Path(file.name)
+        try:
+            file.write(content)
+            file.flush()
+            os.fsync(file.fileno())
+        except BaseException:
+            temp.unlink(missing_ok=True)
+            raise
+    try:
+        temp.replace(entry)
+    finally:
+        temp.unlink(missing_ok=True)

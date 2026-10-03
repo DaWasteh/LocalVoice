@@ -508,13 +508,15 @@ class Window(QWidget):
         if accepted:
             previous = self.settings
             try:
-                self.hotkey.register(new.hotkey)
+                if new.hotkey != previous.hotkey:
+                    self.hotkey.register(new.hotkey)
                 if new.autostart != previous.autostart:
                     set_autostart(new.autostart, self.root)
                 new.save(self.root)
             except Exception as exc:
                 try:
-                    self.hotkey.register(previous.hotkey)
+                    if new.hotkey != previous.hotkey:
+                        self.hotkey.register(previous.hotkey)
                     if new.autostart != previous.autostart:
                         set_autostart(previous.autostart, self.root)
                 except Exception:

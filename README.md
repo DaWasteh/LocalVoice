@@ -58,16 +58,26 @@ Beim ersten Start wählt LocalVoice automatisch eine dedizierte GPU, sonst eine 
 - Ein Wechsel zwischen zwei Textfeldern **innerhalb** desselben Fensters lässt sich nicht erkennen.
 - VAD und Stillefilter reduzieren Halluzinationen, verhindern sie bei Musik, Geräuschen oder sehr kurzen Äußerungen aber nicht vollständig. Wichtige Texte gegenlesen.
 - LocalVoice wechselt **nicht heimlich auf die CPU**, wenn die gewählte GPU nicht funktioniert (z. B. weil ein anderes Programm den Grafikspeicher belegt). In dem Fall CPU oder ein kleineres Modell wählen.
-- Nach einem Umzug des Ordners aktualisiert LocalVoice den Autostart-Eintrag beim nächsten Start selbst.
+- Nach einem Umzug des Ordners aktualisiert LocalVoice den Autostart-Eintrag beim nächsten manuellen Start selbst. Der Programmordner und die Python-Umgebung müssen bei der Anmeldung erreichbar sein (bei externen Laufwerken vorher einhängen).
+
+### Autostart (Windows, Linux und macOS)
+
+Unter **Einstellungen → Allgemein → „Mit Anmeldung starten (im Infobereich)“** aktivieren. LocalVoice startet ab der nächsten Benutzeranmeldung mit `--tray`; ohne verfügbaren Infobereich erscheint stattdessen das Fenster. Ausschalten entfernt den Eintrag. Administratorrechte sind nicht nötig.
+
+- **Windows:** `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` → `LocalVoice` (unverändert).
+- **Linux, auch Ubuntu/Wayland:** `$XDG_CONFIG_HOME/autostart/LocalVoice.desktop`, standardmäßig `~/.config/autostart/LocalVoice.desktop`. Benötigt einen Desktop mit XDG-Autostart-Unterstützung, z. B. GNOME oder KDE. Eine virtuelle Python-Umgebung wird direkt verwendet, ohne Shell-Aktivierung.
+- **macOS:** `~/Library/LaunchAgents/com.localvoice.LocalVoice.plist` (bei der nächsten Anmeldung durch launchd gestartet).
+
+Autostart ergänzt keine globalen Wayland-Hotkeys und kein automatisches Einfügen; diese Grenzen bleiben bestehen.
 
 ## Plattformstatus
 
 | Plattform | Stand |
 |---|---|
 | Windows 10/11 x64 | Unterstützt; getestet unter Windows 11 (CPU und Vulkan). |
-| Linux (X11) | Code vorbereitet (`xdotool`, PortAudio, eigener whisper-server-Build), noch nicht real getestet. |
-| Linux (Wayland) | Globale Hotkeys und automatisches Einfügen noch nicht unterstützt. |
-| macOS | Code und Metal-Runtime-Build vorbereitet, noch nicht real getestet; kein signiertes `.app`. |
+| Linux (X11) | XDG-Autostart implementiert und unter Linux getestet. Diktierintegration vorbereitet (`xdotool`, PortAudio, eigener whisper-server-Build), noch nicht vollständig hardwaregetestet. |
+| Linux (Wayland) | XDG-Autostart verfügbar. Globale Hotkeys und automatisches Einfügen noch nicht unterstützt. |
+| macOS | LaunchAgent-Autostart implementiert. Code und Metal-Runtime-Build vorbereitet, noch nicht vollständig hardwaregetestet; kein signiertes `.app`. |
 
 ## Entwicklung
 
