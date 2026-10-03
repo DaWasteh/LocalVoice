@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.1 — 2026-10-03
+
+Schwerpunkt: weniger Fehlalarme von Virenscannern. Microsoft Defender hatte `LocalVoice.exe` aus v0.3.0 als `Trojan:Win32/Sabsik.EN.A!ml` eingestuft und samt Autostart-Eintrag und Verknüpfung entfernt.
+
+### Release
+- `LocalVoice.exe` trägt jetzt Versions- und Herausgeberangaben (Produktname, Version, Copyright) in den Dateieigenschaften.
+- `Setup.ps1` kompiliert den PyInstaller-Bootloader selbst, statt den vorkompilierten zu verwenden, der auch in Schadsoftware steckt und deshalb häufig erkannt wird.
+- Die EXE ist weiterhin nicht codesigniert. Ein Fehlalarm ist damit unwahrscheinlicher, aber nicht ausgeschlossen; das README beschreibt, was dann zu tun ist.
+
 ## v0.3.0 — 2026-09-23
 
 Erste öffentliche Version. Schwerpunkt: Kein diktierter Text und kein aufgenommenes Audio geht mehr still verloren.

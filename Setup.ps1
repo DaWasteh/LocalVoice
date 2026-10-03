@@ -11,6 +11,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Falsche Python-Version' }
 if ($LASTEXITCODE -ne 0) { throw 'pip-Update fehlgeschlagen' }
 & $Python -m pip install -r requirements-dev.txt
 if ($LASTEXITCODE -ne 0) { throw 'Installation fehlgeschlagen' }
+# Eigener PyInstaller-Bootloader: Der vorkompilierte steckt auch in Schadsoftware und löst Virenscanner-Fehlalarme aus.
+$env:PYINSTALLER_COMPILE_BOOTLOADER = '1'
+$PyInstaller = (Select-String -Path requirements-dev.txt -Pattern '^pyinstaller==').Line
+& $Python -m pip install --force-reinstall --no-deps --no-cache-dir --no-binary pyinstaller $PyInstaller
+if ($LASTEXITCODE -ne 0) { Write-Warning 'Bootloader nicht kompiliert (Visual Studio mit C++-Werkzeugen fehlt?). EXE-Builds nutzen den vorkompilierten Bootloader.' }
+Remove-Item Env:PYINSTALLER_COMPILE_BOOTLOADER
 & $Python -m pip check
 if ($LASTEXITCODE -ne 0) { throw 'Abhängigkeitsprüfung fehlgeschlagen' }
 Write-Host 'Bereit. Start: .venv\Scripts\pythonw.exe main.py | EXE: .\Build.ps1'

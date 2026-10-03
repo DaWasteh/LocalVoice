@@ -1,4 +1,4 @@
-# Validation status — v0.3.0
+# Validation status — v0.3.1
 
 Reference build: Windows 11 x64, CPython **3.14**, PyInstaller **6.22.3**, whisper.cpp at the revision pinned in `runtime/README.md`.
 

@@ -19,7 +19,7 @@
 
 Python muss nicht installiert sein. Die Visual-C++-Laufzeit liegt bei. Benötigt wird ein aktueller Grafiktreiber, der den **Vulkan-Loader** (`vulkan-1.dll`) mitbringt. Das ist bei aktuellen NVIDIA-, AMD- und Intel-Treibern der Fall und auch für den CPU-Modus nötig.
 
-Die EXE ist nicht codesigniert. Windows SmartScreen kann deshalb beim ersten Start warnen („Weitere Informationen“ → „Trotzdem ausführen“).
+Die EXE ist nicht codesigniert. Windows SmartScreen kann deshalb beim ersten Start warnen („Weitere Informationen“ → „Trotzdem ausführen“). Selten stuft Microsoft Defender die EXE fälschlich als Schadsoftware ein und verschiebt sie in Quarantäne. Dann unter **Windows-Sicherheit → Viren- & Bedrohungsschutz → Schutzverlauf** den Eintrag wiederherstellen oder den LocalVoice-Ordner als Ausschluss eintragen und danach Autostart in den Einstellungen neu aktivieren.
 
 ### Welches Modell?
 
@@ -71,7 +71,7 @@ Beim ersten Start wählt LocalVoice automatisch eine dedizierte GPU, sonst eine 
 
 ## Entwicklung
 
-Voraussetzungen: Windows, **Python 3.14** (64 Bit). Für die Whisper-Runtime zusätzlich Git, CMake, Visual Studio mit C++-Werkzeugen und das Vulkan SDK.
+Voraussetzungen: Windows, **Python 3.14** (64 Bit). Für die Whisper-Runtime zusätzlich Git, CMake, Visual Studio mit C++-Werkzeugen und das Vulkan SDK. `Setup.ps1` kompiliert mit denselben C++-Werkzeugen den PyInstaller-Bootloader selbst (weniger Virenscanner-Fehlalarme); ohne sie bleibt der vorkompilierte.
 
 ```powershell
 .\Setup.ps1                                   # .venv mit Python 3.14 + Abhängigkeiten
